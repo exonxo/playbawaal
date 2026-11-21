@@ -51,7 +51,7 @@ export function Phone({ view, priv, me, players, send, now, isHost, hostAct }: P
       <div className="space-y-3 text-center">
         {o && (
           <div className="flex justify-center">
-            <Stamp tone={o.result === "done" ? "leaf" : "ink"}>
+            <Stamp tone={o.result === "done" ? "leaf" : "ink"} className="max-w-full !whitespace-normal !text-p-lead">
               {nameOf(players, o.target)}: {o.result === "done" ? (o.kind === "dare" ? "Himmat dikhayi! ✅" : "Sach bola! ✅") : "Pass 🙅 — koi baat nahi"}
             </Stamp>
           </div>
@@ -64,7 +64,9 @@ export function Phone({ view, priv, me, players, send, now, isHost, hostAct }: P
             className="w-full"
             onClick={() => {
               mine("whoosh", 20);
-              send("spin");
+              // The host's own phone sends as a player; spinning for someone else's turn needs the host action.
+              if (isHost && view.holder !== me.id) hostAct("spin");
+              else send("spin");
             }}
           >
             <RotateCw className="h-5 w-5" strokeWidth={2.4} /> Bottle ghumao!
