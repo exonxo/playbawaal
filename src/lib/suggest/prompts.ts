@@ -28,7 +28,7 @@ const CHOR_THEMES = [
 
 const SHAPES: Record<SuggestKind, string> = {
   "chor-kaun-topic": `{"id": "kebab-case-english", "label": "short English title", "emoji": "one emoji", "words": ["18-28 distinct short answers"]}`,
-  "emoji-puzzle": `{"puzzles": [{"emojis": "2-6 emoji", "decode": "which emoji means what", "category": "Movie|Food|Place|Festival|Phrase|Cartoon|Sport|Song", "answer": "the single correct answer", "alt": ["other accepted answers"], "hint": "short hint without the answer", "level": "kids|family|adults"}]}`,
+  "emoji-puzzle": `{"puzzles": [{"emojis": "2-6 emoji", "decode": "which emoji means what", "category": "Movie|Food|Place|Festival|Phrase|Cartoon|Sport|Song|Person|Thing", "answer": "the single correct answer", "alt": ["other accepted answers"], "hint": "short hint without the answer", "level": "kids|family|adults"}]}`,
   "next-game": `{"gameId": "one of the ids below", "reason": "one friendly sentence"}`,
   dare: `{"text": "one short dare or icebreaker"}`,
   "bottle-prompts": `{"truths": ["..."], "dares": ["..."], "social": ["..."]}`,
@@ -114,6 +114,7 @@ export function buildPrompt(kind: SuggestKind, context: Record<string, unknown>)
         category ? `Every puzzle's category must be "${category}".` : "",
         "Rules for every puzzle:",
         "- The answer is a real, well-known name or title (a real movie, song, dish, place, festival, sport or saying) that Indian families would recognise. Never invent a phrase or describe a scene.",
+        "- The category says what KIND of thing the answer is, because players are asked \"which movie?\", \"which sport?\" and so on. Sport = the name of a sport or game only (Cricket, Kabaddi), never a player, team or tournament. Person = a real person, god or character (Sachin Tendulkar, Hanuman). Phrase = a saying or idiom only. Thing = an object, animal, symbol, mission or idea. If the answer doesn't fit any category exactly, leave that puzzle out.",
         "- The emojis are 2-6 emoji only (no letters or digits except keycap numbers like 3️⃣), and each emoji stands for a word, sound or idea in the answer, so the answer can be worked out from them.",
         "- \"decode\" says in a few words which emoji stands for what. The hint is short and must not contain the answer.",
         "- Facts must be correct; if you are not sure, leave that puzzle out. Family-safe.",

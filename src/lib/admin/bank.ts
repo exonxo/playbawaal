@@ -2,6 +2,7 @@ import type { ChorTopic } from "@/content/chor-kaun";
 import type { EmojiPuzzle } from "@/content/emoji-picture";
 import type { Level } from "@/lib/types";
 import { shuffle } from "@/lib/util";
+import { checkPuzzle } from "@/lib/suggest/validate";
 import { getServiceClient } from "../supabase/service";
 
 /**
@@ -33,7 +34,9 @@ export async function approvedEmojiPuzzles(level: Level, count: number, avoid: s
     const fresh = data
       .filter((row) => allowed.includes(row.level as Level))
       .map((row) => row.data as EmojiPuzzle)
-      .filter((p) => p && typeof p.answer === "string" && !shown.has(p.answer.toLowerCase()));
+      .filter((p) => p && typeof p.answer === "string" && !shown.has(p.answer.toLowerCase()))
+      // Same checks as AI output and library rows (e.g. a Sport card whose answer is a person).
+      .filter((p) => typeof checkPuzzle(p, level) !== "string");
     if (fresh.length < 3) return null;
     return shuffle(fresh).slice(0, count);
   } catch {

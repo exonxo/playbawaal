@@ -22,7 +22,6 @@ const DARES: string[] = [
   "Pretend you are a cricket commentator describing this room for 15 seconds.",
 ];
 
-const EMOJI_CATEGORIES = ["Movie", "Food", "Place", "Festival", "Phrase", "Cartoon", "Sport", "Song"] as const;
 
 function slugify(label: string): string {
   const base = label
@@ -110,6 +109,4 @@ export function fallbackFor(kind: SuggestKind, context: Record<string, unknown>)
   }
 }
 
-export function isEmojiCategory(v: string): v is EmojiPuzzle["category"] {
-  return (EMOJI_CATEGORIES as readonly string[]).includes(v);
-}
+export { isEmojiCategory } from "./emoji-category";

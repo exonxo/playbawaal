@@ -6,7 +6,8 @@ import type { Level } from "@/lib/types";
 import { isBottleTone } from "@/content/spin-bottle";
 import { validateBottleBatch } from "./bottle";
 import { randomId } from "@/lib/util";
-import { fallbackEmojiPuzzles, isEmojiCategory } from "./fallbacks";
+import { fallbackEmojiPuzzles } from "./fallbacks";
+import { categoryMismatch, isEmojiCategory } from "./emoji-category";
 import { isUnsafeSuggestText, type SafetyContext } from "./safety";
 import type { DareResult, NextGameResult, SuggestKind } from "./types";
 
@@ -95,6 +96,8 @@ export function checkPuzzle(item: unknown, requestedLevel: Level, requiredCatego
   if (!answer || answer.length > 60 || answer.split(" ").length > 8 || !/[\p{L}\p{N}]/u.test(answer)) return "answer";
   if (!hint || (answer.length >= 4 && hint.toLowerCase().includes(answer.toLowerCase()))) return "hint";
   if (!isEmojiCategory(category) || (requiredCategory && category !== requiredCategory)) return "category";
+  // The game asks "Kaunsa khel?" for Sport and so on, so the answer must really be that kind of thing.
+  if (categoryMismatch(category, answer)) return "category";
   if (!LEVELS.includes(level as Level) || !levelAllowed(requestedLevel, level as Level)) return "level";
   if (isUnsafeSuggestText(emojis, safety) || isUnsafeSuggestText(answer, safety) || isUnsafeSuggestText(hint, safety)) return "unsafe";
   const alt = Array.isArray(p.alt)
