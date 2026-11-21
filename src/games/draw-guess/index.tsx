@@ -1,4 +1,5 @@
 "use client";
+import { freshFirst } from "@/lib/builtinMemory";
 import { LevelPicker, NumberPicker } from "@/components/ui";
 import { DRAW_WORDS } from "@/content/draw-guess";
 import { HOST_ID, type ControllerProps, type GameModule, type Level } from "@/lib/types";
@@ -150,7 +151,7 @@ const drawGuess: GameModule<State, Pub, Priv, Options> = {
     const base: State = {
       level: options.level,
       seconds: options.seconds,
-      deck: deckFor(options.level),
+      deck: freshFirst(deckFor(options.level), (options as { seen?: string[] }).seen),
       drawers,
       turn: 0,
       totalTurns: Math.max(1, drawers.length * options.roundsPerPlayer),

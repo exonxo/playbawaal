@@ -2,6 +2,7 @@
 
 import { fallbackFor } from "@/lib/suggest/fallbacks";
 import { keysOf, recall, remember } from "@/lib/suggest/memory";
+import { roomPlayers } from "@/lib/suggest/roomPlayers";
 import type { SuggestApiResponse, SuggestKind } from "@/lib/suggest/types";
 import type { Level } from "@/lib/types";
 import { validateGeminiPayload } from "@/lib/suggest/validate";
@@ -20,11 +21,12 @@ export async function requestSuggest<T>(
 ): Promise<{ data: T; fallback: boolean }> {
   // The device's own memory goes with the request, so the server can avoid repeats.
   const withMemory = { ...context, avoid: recall(kind) };
+  const players = roomPlayers();
   try {
     const res = await fetch("/api/suggest", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind, context: withMemory, roomCode }),
+      body: JSON.stringify({ kind, context: withMemory, roomCode, players }),
       signal: AbortSignal.timeout(9_500),
     });
     const json = (await res.json()) as SuggestApiResponse;

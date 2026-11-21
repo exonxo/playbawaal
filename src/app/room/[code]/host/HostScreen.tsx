@@ -1,4 +1,5 @@
 "use client";
+import { setRoomPlayers } from "@/lib/suggest/roomPlayers";
 import { Check, ChevronDown, DoorClosed, Home, Info, MonitorSmartphone, Play, QrCode, Share2, Tv, X } from "lucide-react";
 import QRCode from "qrcode";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -167,6 +168,9 @@ function HostRoom({
   const [endingParty, setEndingParty] = useState(false);
   const [takeoverBusy, setTakeoverBusy] = useState(false);
   const online = state.players.filter((p) => p.connected);
+  // Fresh content skips what anyone in the room has seen with this host (their device ids, no names).
+  const onlineIds = online.map((p) => p.id).join(",");
+  useEffect(() => setRoomPlayers(onlineIds ? onlineIds.split(",") : []), [onlineIds]);
   const mePlayer = state.players.find((p) => p.id === me.id) ?? { ...me, connected: true };
 
   useOnChange(online.length, (n, p) => {

@@ -1,4 +1,5 @@
 import { after, NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { isSupabaseConfigured } from "@/lib/env";
 import { logLater } from "@/lib/admin/events";
 import { approvedChorTopic, approvedEmojiPuzzles } from "@/lib/admin/bank";
@@ -62,12 +63,19 @@ function cleanContext(kind: SuggestKind, raw: Record<string, unknown>): Record<s
   }
 }
 
+/** One-way keys for the players' anonymous device ids (valid anonymous viewer ids, at most 50). */
+function playerKeys(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const ids = raw.filter((x): x is string => typeof x === "string" && /^[A-Za-z0-9_-]{4,40}$/.test(x) && !x.startsWith("bot-"));
+  return [...new Set(ids)].slice(0, 50).map((id) => createHash("sha256").update(`player:${id}`).digest("hex").slice(0, 32));
+}
+
 function ok(data: unknown, fallback: boolean) {
   return NextResponse.json({ ok: true, fallback, data }, { headers: noStore });
 }
 
 export async function POST(req: Request) {
-  let body: { kind?: string; context?: Record<string, unknown>; roomCode?: string };
+  let body: { kind?: string; context?: Record<string, unknown>; roomCode?: string; players?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -125,7 +133,9 @@ export async function POST(req: Request) {
 
   // The content library comes first: something already made that this host hasn't been shown in
   // 30 days. Keyed by the host's account id. The AI services are asked only when nothing is left.
-  const viewer: Viewer = { userId: user.id };
+  // The host and the players in the room (one-way hashes of their device ids): nobody gets an item
+  // any of them has seen in the last 30 days (migration 0016).
+  const viewer: Viewer = { userId: user.id, players: playerKeys(body.players) };
 
   // KBC news questions come from the library only (made in the weekly top-up or by the admin), never
   // from a news fetch or an AI call while a game waits. None left: the game uses its own bank.

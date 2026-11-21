@@ -195,7 +195,9 @@ const oddWordOut: GameModule<State, Pub, Priv, Options> = {
   defaultOptions: { level: "family", voteSeconds: DEFAULT_VOTE_SECONDS },
   OptionsForm,
   init({ players, options }) {
-    return deal(options, players.map((p) => p.id), 1, {}, []);
+    // Pairs this device showed in earlier games count as used, so they come last.
+    const seen = Array.isArray((options as { seen?: unknown }).seen) ? ((options as unknown as { seen: string[] }).seen) : [];
+    return deal(options, players.map((p) => p.id), 1, {}, seen.slice(-60));
   },
   reduce(s, a, { players, now }) {
     if (a.playerId === HOST_ID) {

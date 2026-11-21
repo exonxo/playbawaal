@@ -1,4 +1,5 @@
 "use client";
+import { freshFirst } from "@/lib/builtinMemory";
 import { LevelPicker, NumberPicker } from "@/components/ui";
 import { SOUNDS, type SoundPrompt } from "@/content/sound-guru";
 import { HOST_ID, type ControllerProps, type GameModule, type Level, type Player } from "@/lib/types";
@@ -139,7 +140,7 @@ const soundGuru: GameModule<State, Pub, Priv, Options> = {
     const base: State = {
       level: options.level,
       seconds: options.seconds ?? 60,
-      deck: deckFor(options.level),
+      deck: freshFirst(deckFor(options.level), (options as { seen?: string[] }).seen, (x) => x.sound),
       makers,
       turn: 0,
       totalTurns: Math.max(1, makers.length * options.roundsPerPlayer),
