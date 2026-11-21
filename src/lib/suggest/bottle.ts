@@ -33,6 +33,7 @@ const ALWAYS: RegExp[] = [
   /\b(?:salary|salaries|pay\s*slip|ctc|hike|increment|bank|password|pin|otp|upi|loan|debt|net\s*worth)\b/i,
   // Exes, crushes on people in the room, secrets about others.
   /\b(?:ex|exes|ex-\w+|crush\s+(?:on|in)\s+(?:someone|anyone)\s+(?:here|in\s+this\s+room))\b/i,
+  /\bcrush\w*\b[^.?!]{0,40}\b(?:here|in\s+(?:this|the)\s+room)\b/i,
   /\b(?:their|his|her)\s+(?:secret|phone|crush)\b/i,
   /\b\w+['’]s\s+(?:secrets?|crush|phone|chats?|messages?|search\s+history)\b/i,
   /\bsecret\s+about\s+(?:someone|anyone|a\s+person)\b/i,
@@ -48,7 +49,8 @@ const SOCIAL_ACTION: RegExp[] = [
   /\bgo\s+live\b/i,
 ];
 /** Social dares must never show other people or the company. */
-const SOCIAL_EXTRA = /\b(?:tag|mention|selfie\s+with|photo\s+of\s+(?:someone|everyone|the\s+group)|company\s+name|@)\b/i;
+// "tag"/"tagging"/"mention(s)" and any @handle. (A trailing \b after "@" never matched before.)
+const SOCIAL_EXTRA = /\b(?:tag\w*|mention\w*|selfie\s+with|photo\s+of\s+(?:someone|everyone|the\s+group)|company\s+name)\b|@\w/i;
 
 const KIDS_FAMILY: RegExp[] = [
   /\b(?:crush|date|dating|boyfriend|girlfriend|romantic|romance|love\s+life|married\s+to|propose|flirt\w*)\b/i,
