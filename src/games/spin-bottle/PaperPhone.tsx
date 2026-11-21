@@ -10,7 +10,7 @@ import { useOnChange, useSfx } from "@/lib/roomAudio";
 import type { PhoneProps } from "@/lib/types";
 import { REACTIONS, type Priv, type Pub } from "./logic";
 import { BottleCircle, KIND_PAPER, PromptCard, ReactionFloat, ReportButton, findP, nameOf } from "./parts";
-import { useBottleRefill } from "./refill";
+import { useBottleRefill, useBottleSignals } from "./refill";
 
 function useWidth() {
   const [w, setW] = useState(320);
@@ -27,6 +27,7 @@ export function Phone({ view, priv, me, players, send, now, isHost, hostAct }: P
   const { shared, mine } = useSfx();
   const width = useWidth();
   useBottleRefill(view, isHost, hostAct);
+  useBottleSignals(view, isHost, hostAct);
 
   const isTarget = view.target === me.id;
   const holderHere = !!view.holder && players.some((p) => p.id === view.holder && p.connected);

@@ -152,7 +152,7 @@ export async function POST(req: Request) {
 
   try {
     const result = await runDeduped(inflightKey(kind, { ...context, roomCode }), () =>
-      runChain(kind, prompt, accept, { allow: (name) => flags[`llm:${name}`] !== false }),
+      runChain(kind, prompt, accept, { allow: (name) => flags[`llm:${name}`] !== false, tone: isBottleTone(context.tone) ? context.tone : undefined }),
     );
     if (result) {
       logLater("suggest", { suggest_kind: kind, provider: result.provider, fallback: false, ms: result.ms });

@@ -1,5 +1,6 @@
 import { BOTTLE_PROMPTS, TONE_INFO, isBottleTone, type BottleKind, type BottlePrompt, type BottleTone } from "@/content/spin-bottle";
 import { breaksBottleRules } from "@/lib/suggest/bottle";
+import { allowedByPolicy, BOTTLE_CATEGORIES, MOOD_ALLOWS, type BottleCategory } from "@/lib/suggest/policy-core";
 import { HOST_ID, type GameAction, type Player } from "@/lib/types";
 import { shuffle } from "@/lib/util";
 
@@ -68,7 +69,23 @@ export interface State {
   /** Texts reported this game, so the host device can avoid them next time. */
   reported: string[];
   stats: { done: number; pass: number };
+  /** What happened to each card, for the player signals the host device sends to the server. */
+  log: SignalEntry[];
+  logSeq: number;
+  /** Kinds of prompt the admin switched off for this mood (strictness settings). */
+  off: BottleCategory[];
+  /** A "loved" reaction was already counted for the card on screen. */
+  loved?: boolean;
 }
+
+export type SignalEvent = "shown" | "done" | "passed" | "flipped" | "loved" | "reported";
+export interface SignalEntry {
+  seq: number;
+  text: string;
+  event: SignalEvent;
+}
+/** Reactions that count as "loved" for the card on screen. */
+const LOVE = new Set(["😂", "🔥", "👏"]);
 
 export interface Pub {
   tone: BottleTone;
@@ -88,6 +105,7 @@ export interface Pub {
   needMore: boolean;
   reported: string[];
   stats: { done: number; pass: number };
+  log: SignalEntry[];
 }
 
 export interface Priv {
@@ -117,7 +135,16 @@ export function initState(tone: BottleTone, players: Player[]): State {
     reactionSeq: 0,
     reported: [],
     stats: { done: 0, pass: 0 },
+    log: [],
+    logSeq: 0,
+    off: [],
   };
+}
+
+function logged(s: State, entries: { text: string; event: SignalEvent }[]): State {
+  let seq = s.logSeq ?? 0;
+  const add = entries.map((e) => ({ ...e, seq: ++seq }));
+  return { ...s, logSeq: seq, log: [...(s.log ?? []), ...add].slice(-40) };
 }
 
 function circleOf(players: Player[]): string[] {
@@ -162,7 +189,11 @@ function spin(s: State, players: Player[], now: number): State {
  */
 function take(s: State, kind: BottleKind, allowSocial: boolean, wantSocial: boolean, hard: Set<string>): { prompt: BottlePrompt; queue: BottlePrompt[] } {
   const used = new Set(s.used);
-  const ok = (p: BottlePrompt) => !hard.has(key(p.text)) && (allowSocial || !p.social);
+  const off = s.off ?? [];
+  const base = (p: BottlePrompt) => !hard.has(key(p.text)) && (allowSocial || !p.social);
+  const fits = (p: BottlePrompt) => base(p) && allowedByPolicy(p.text, !!p.social, off);
+  // Strictness settings are followed unless they leave nothing at all for this pile.
+  const ok = BOTTLE_PROMPTS[s.tone].some((p) => p.kind === kind && fits(p)) || s.queue[kind].some(fits) ? fits : base;
   let queue = s.queue[kind].filter((p) => !hard.has(key(p.text)) && !used.has(key(p.text)));
   if (!queue.some(ok)) queue = [...queue, ...deckFor(s.tone, kind, new Set([...used, ...hard])).filter((p) => !used.has(key(p.text)) && !hard.has(key(p.text)))];
   // Everything has been seen: start the deck over (still never the other side of this card).
@@ -176,6 +207,11 @@ function take(s: State, kind: BottleKind, allowSocial: boolean, wantSocial: bool
 }
 
 function deal(s: State, kind: BottleKind): State {
+  const dealt = dealCard(s, kind);
+  return dealt.turn.card && dealt !== s ? logged(dealt, [{ text: dealt.turn.card[0].text, event: "shown" }]) : dealt;
+}
+
+function dealCard(s: State, kind: BottleKind): State {
   const target = s.turn.target;
   if (!target) return s;
   const allowSocial = kind === "dare" && TONE_INFO[s.tone].adult && !s.socialUsed && !s.noSocial.includes(target);
@@ -190,6 +226,7 @@ function deal(s: State, kind: BottleKind): State {
     queue: { ...s.queue, [kind]: second.queue },
     used: [...s.used, key(first.prompt.text), key(second.prompt.text)].slice(-400),
     socialUsed: s.socialUsed || !!first.prompt.social,
+    loved: false,
     turn: { ...s.turn, kind, card, side: 0, flipped: false },
   };
 }
@@ -197,8 +234,10 @@ function deal(s: State, kind: BottleKind): State {
 function finishCard(s: State, result: "done" | "pass"): State {
   const { target, kind } = s.turn;
   if (s.phase !== "card" || !target || !kind) return s;
+  const shown = s.turn.card?.[s.turn.side];
+  const base = shown ? logged(s, [{ text: shown.text, event: result === "done" ? "done" : "passed" }]) : s;
   return {
-    ...s,
+    ...base,
     phase: "ready",
     stats: { done: s.stats.done + (result === "done" ? 1 : 0), pass: s.stats.pass + (result === "pass" ? 1 : 0) },
     turn: { ...s.turn, holder: target, card: null, kind: null, outcome: { target, kind, result } },
@@ -218,7 +257,22 @@ function report(s: State): State {
     used: [...s.used, key(next.prompt.text)].slice(-400),
     reported: [...s.reported, bad.text].slice(-20),
     turn: { ...s.turn, card: nextCard },
+    log: logged(s, [{ text: bad.text, event: "reported" }, { text: next.prompt.text, event: "shown" }]).log,
+    logSeq: (s.logSeq ?? 0) + 2,
   };
+}
+
+/** Strictness settings for this mood from the server. Applied to everything still in the piles. */
+function setPolicy(s: State, payload: unknown): State {
+  if (!payload || typeof payload !== "object") return s;
+  const p = payload as { tone?: unknown; off?: unknown };
+  if (p.tone !== s.tone || !Array.isArray(p.off)) return s;
+  const off = p.off.filter((c): c is BottleCategory => (BOTTLE_CATEGORIES as readonly string[]).includes(c as string) && MOOD_ALLOWS[s.tone].includes(c as BottleCategory));
+  const keep = (l: BottlePrompt[]) => {
+    const kept = l.filter((x) => allowedByPolicy(x.text, !!x.social, off));
+    return kept.length >= 2 ? kept : l;
+  };
+  return { ...s, off, queue: { truth: keep(s.queue.truth), dare: keep(s.queue.dare) } };
 }
 
 /** New prompts from the host's AI fetch. Re-checked here, so a bad batch can't reach the TV. */
@@ -235,7 +289,7 @@ function refill(s: State, payload: unknown): State {
     const text = typeof r.text === "string" ? r.text.trim() : "";
     const social = r.social === true && kind === "dare";
     const id = typeof r.id === "string" ? r.id.slice(0, 40) : `ai-${have.size}`;
-    if (!kind || !text || have.has(key(text)) || breaksBottleRules(text, s.tone, social)) continue;
+    if (!kind || !text || have.has(key(text)) || breaksBottleRules(text, s.tone, social) || !allowedByPolicy(text, social, s.off ?? [])) continue;
     have.add(key(text));
     add[kind].push({ id, kind, text, ...(social ? { social: true } : {}) });
   }
@@ -250,7 +304,11 @@ function react(s: State, from: string, emoji: unknown, now: number): State {
   const lastMine = [...s.reactions].reverse().find((r) => r.from === from);
   if (lastMine && now - lastMine.at < 600) return s;
   const seq = s.reactionSeq + 1;
-  return { ...s, reactionSeq: seq, reactions: [...s.reactions.filter((r) => now - r.at < REACTION_MS), { id: seq, from, emoji, at: now }].slice(-12) };
+  const next = { ...s, reactionSeq: seq, reactions: [...s.reactions.filter((r) => now - r.at < REACTION_MS), { id: seq, from, emoji, at: now }].slice(-12) };
+  // The first laugh, fire or clap on a card counts once as "loved" for that card.
+  const shown = s.phase === "card" ? s.turn.card?.[s.turn.side] : null;
+  if (!shown || s.loved || !LOVE.has(emoji) || from === s.turn.target) return next;
+  return { ...logged(next, [{ text: shown.text, event: "loved" }]), loved: true };
 }
 
 function isActor(s: State, id: string) {
@@ -272,8 +330,14 @@ export function reduce(s: State, a: GameAction, players: Player[], now: number):
       if (s.phase !== "choose" || !isActor(s, a.playerId)) return s;
       return a.payload === "truth" || a.payload === "dare" ? deal(s, a.payload) : s;
     case "flip":
-      if (s.phase !== "card" || !isActor(s, a.playerId)) return s;
-      return { ...s, turn: { ...s.turn, side: s.turn.side === 0 ? 1 : 0, flipped: true } };
+      if (s.phase !== "card" || !isActor(s, a.playerId) || !s.turn.card) return s;
+      {
+        const side = s.turn.side === 0 ? 1 : 0;
+        // Flipping away from a side is a vote against it; the other side counts as shown the first time.
+        const entries: { text: string; event: SignalEvent }[] = [{ text: s.turn.card[s.turn.side].text, event: "flipped" }];
+        if (!s.turn.flipped) entries.push({ text: s.turn.card[side].text, event: "shown" });
+        return { ...logged(s, entries), loved: false, turn: { ...s.turn, side, flipped: true } };
+      }
     case "done":
       return isActor(s, a.playerId) ? finishCard(s, "done") : s;
     case "pass":
@@ -295,6 +359,8 @@ export function reduce(s: State, a: GameAction, players: Player[], now: number):
     }
     case "refill":
       return host ? refill(s, a.payload) : s;
+    case "policy":
+      return host ? setPolicy(s, a.payload) : s;
   }
   return s;
 }
@@ -333,6 +399,7 @@ export function publicView(s: State): Pub {
     needMore: s.queue.truth.length < LOW_WATER || s.queue.dare.length < LOW_WATER,
     reported: s.reported,
     stats: s.stats,
+    log: s.log ?? [],
   };
 }
 

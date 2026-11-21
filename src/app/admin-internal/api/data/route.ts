@@ -3,6 +3,7 @@ import { adminConfig } from "@/lib/admin/config";
 import { auditOrThrow, AuditUnavailable } from "@/lib/admin/audit";
 import { adminHeaders, adminSession, clientIp } from "@/lib/admin/session";
 import * as q from "@/lib/admin/queries";
+import * as engine from "@/lib/admin/engine";
 import { isLibraryKind } from "@/lib/suggest/library";
 
 export const runtime = "nodejs";
@@ -102,6 +103,14 @@ export async function GET(req: Request) {
         return json(await q.quotaToday());
       case "health":
         return json(await q.health());
+      case "rules":
+        return json(await engine.rulesView());
+      case "policy":
+        return json(await engine.policyView());
+      case "reports":
+        return json(await engine.reportsView());
+      case "signals":
+        return json(await engine.signalsView());
       default:
         return json({ error: "unknown_view" }, 400);
     }

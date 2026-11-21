@@ -17,6 +17,7 @@ import { isLibraryKind, itemsFrom, saveToLibrary, type LibraryKind } from "../su
 import { isBottleTone, type BottleTone } from "@/content/spin-bottle";
 import type { BottleBatch } from "../suggest/bottle";
 import { flagMap, invalidateFlags, knownFlags } from "./flags";
+import * as engine from "./engine";
 
 /**
  * The admin panel's write actions. Each handler: validates its input, checks the authenticator code
@@ -71,6 +72,18 @@ export async function runAction(action: AdminAction, body: Record<string, unknow
         return await userBan(body, ctx, "none", "user.enable");
       case "user.delete":
         return await userDelete(body, ctx);
+      case "rule.add":
+        return await engine.ruleAdd(body, ctx);
+      case "rule.set_active":
+        return await engine.ruleSetActive(body, ctx);
+      case "rule.delete":
+        return await engine.ruleDelete(body, ctx);
+      case "policy.set":
+        return await engine.policySet(body, ctx);
+      case "report.resolve":
+        return await engine.reportResolve(body, ctx);
+      case "signal.restore":
+        return await engine.signalRestore(body, ctx);
     }
   } catch (e) {
     if (e instanceof AuditUnavailable) return fail(503, "audit_unavailable");
@@ -209,7 +222,7 @@ async function libraryGenerate(body: Record<string, unknown>, ctx: ActionContext
       }
       return v;
     };
-    const result = await runChain(kind, buildPrompt(kind, context), accept, { allow, temperature: ADMIN_TEMPERATURE });
+    const result = await runChain(kind, buildPrompt(kind, context), accept, { allow, temperature: ADMIN_TEMPERATURE, tone: kind === "bottle-prompts" ? tone : undefined });
     if (!result) {
       failed++;
       if (failed >= 2) break;

@@ -44,6 +44,12 @@ export const ACTIONS = [
   "user.disable",
   "user.enable",
   "user.delete",
+  "rule.add",
+  "rule.set_active",
+  "rule.delete",
+  "policy.set",
+  "report.resolve",
+  "signal.restore",
 ] as const;
 export type AdminAction = (typeof ACTIONS)[number];
 
