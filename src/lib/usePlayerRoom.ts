@@ -61,7 +61,7 @@ export function usePlayerRoom(code: string, me: Identity | null) {
     let closed = false;
     const t = openRoom(code);
     transportRef.current = t;
-    const receiver = createRoomReceiver(code);
+    const receiver = createRoomReceiver(code, { strict: isSupabaseConfigured });
     const clock = createClockSync();
     const queue = serialQueue();
     let keys = me.keys;

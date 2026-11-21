@@ -14,6 +14,8 @@ export interface RoomSnapshot {
   view: unknown;
   /** Host game clock (pauses while the host's phone is in the background). */
   hostNow: number;
+  /** Host's wall clock when this snapshot was made (ms). Lets phones reject old snapshots replayed later. */
+  at?: number;
   /** Start time of this host session; a newer session replaces an older one. */
   epoch: number;
   seq: number;

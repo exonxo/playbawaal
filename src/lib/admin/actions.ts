@@ -11,7 +11,7 @@ import { buildPrompt } from "../suggest/prompts";
 import { runChain } from "../suggest/chain";
 import { getServiceClient } from "../supabase/service";
 import { AuditUnavailable, auditOrThrow, DESTRUCTIVE, type AdminAction } from "./audit";
-import { verifyTotp } from "./crypto";
+import { consumeTotp } from "./totp-once";
 import { insertPending } from "./bank";
 import { isLibraryKind, itemsFrom, saveToLibrary, type LibraryKind } from "../suggest/library";
 import { isBottleTone, type BottleTone } from "@/content/spin-bottle";
@@ -49,7 +49,7 @@ function db() {
 
 export async function runAction(action: AdminAction, body: Record<string, unknown>, ctx: ActionContext): Promise<ActionResult> {
   try {
-    if (DESTRUCTIVE.has(action) && !verifyTotp(String(body.totp ?? "").replace(/\s/g, ""), ctx.totpSecret)) {
+    if (DESTRUCTIVE.has(action) && !(await consumeTotp(String(body.totp ?? "").replace(/\s/g, ""), ctx.totpSecret, "stepup"))) {
       return fail(400, "totp_invalid");
     }
     switch (action) {

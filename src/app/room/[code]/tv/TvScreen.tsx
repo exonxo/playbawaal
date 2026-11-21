@@ -12,6 +12,7 @@ import { getGameModule } from "@/games/modules";
 import { RoomAudioProvider } from "@/lib/roomAudio";
 import type { RoomSnapshot, SignedRoom } from "@/lib/room";
 import { createClockSync, createRoomReceiver } from "@/lib/roomReceiver";
+import { isSupabaseConfigured } from "@/lib/env";
 import { serialQueue } from "@/lib/secure";
 import { openRoom } from "@/lib/transport";
 import { useNow } from "@/lib/useNow";
@@ -35,7 +36,7 @@ export function TvScreen({ code }: { code: string }) {
     const id = `tv-${randomId(6)}`;
     t.track(id);
     t.send("sync", { id });
-    const receiver = createRoomReceiver(code);
+    const receiver = createRoomReceiver(code, { strict: isSupabaseConfigured });
     const clock = createClockSync();
     const queue = serialQueue();
     const off = t.on("room", (msg: SignedRoom) =>

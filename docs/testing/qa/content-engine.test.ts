@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { BOTTLE_PROMPTS, type BottleTone } from "../../../src/content/spin-bottle";
 import { applyRules, compileAll, matchRule, ruleGuidance, ruleProblem, type ContentRule } from "../../../src/lib/suggest/rules-core";
 import { allowedByPolicy, applyBottlePolicy, categoriesOf, cleanPolicy, MOOD_ALLOWS, offFor, policyGuidance } from "../../../src/lib/suggest/policy-core";
-import { cleanEvents, retireDecisions, roomHash, MIN_SHOWN, REPORT_ROOMS } from "../../../src/lib/suggest/signals";
+import { cleanEvents, retireDecisions, roomHash, voterHash, MIN_SHOWN, MIN_VOTERS, REPORT_ROOMS } from "../../../src/lib/suggest/signals";
 import { initState, publicView, reduce, tick, SPIN_MS, type State } from "../../../src/games/spin-bottle/logic";
 import { HOST_ID, type GameAction, type Player } from "../../../src/lib/types";
 
@@ -148,15 +148,22 @@ function toCard(s: State, kind: "truth" | "dare", now: number): State {
     const out = cleanEvents([...Array.from({ length: 30 }, () => ({ key: "Sing a song", event: "flipped" })), { key: "sing  a song", event: "shown" }, { key: "Sing a Song", event: "shown" }]);
     assert.equal(out.length, 2);
   });
-  await check("SIG-2", "reports from enough rooms switch an item off; so does a high flip-or-pass rate", () => {
+  await check("SIG-2", "reports from enough hosts switch an item off; so does a high flip-or-pass rate from several hosts", () => {
     const d = retireDecisions([
       { text_norm: "a", shown: 3, done: 0, passed: 0, flipped: 0, reported_rooms: REPORT_ROOMS },
-      { text_norm: "b", shown: MIN_SHOWN, done: 2, passed: 6, flipped: 6, reported_rooms: 0 },
-      { text_norm: "c", shown: MIN_SHOWN - 1, done: 0, passed: 19, flipped: 0, reported_rooms: 0 },
-      { text_norm: "d", shown: 40, done: 30, passed: 5, flipped: 5, reported_rooms: 1 },
+      { text_norm: "b", shown: MIN_SHOWN, done: 2, passed: 6, flipped: 6, reported_rooms: 0, voters: MIN_VOTERS },
+      { text_norm: "c", shown: MIN_SHOWN - 1, done: 0, passed: 19, flipped: 0, reported_rooms: 0, voters: 9 },
+      { text_norm: "d", shown: 40, done: 30, passed: 5, flipped: 5, reported_rooms: 1, voters: 9 },
+      { text_norm: "e", shown: 200, done: 0, passed: 100, flipped: 100, reported_rooms: 0, voters: MIN_VOTERS - 1 },
     ]);
     assert.deepEqual(d.reports, ["a"]);
-    assert.deepEqual(d.signals, ["b"], "c hasn't been shown enough; d is liked");
+    assert.deepEqual(d.signals, ["b"], "c hasn't been shown enough; d is liked; e came from too few hosts");
+  });
+  await check("SIG-2b", "the voter hash is one-way and differs per account", () => {
+    const a = voterHash("11111111-2222-3333-4444-555555555555");
+    assert.match(a, /^[0-9a-f]{32}$/);
+    assert.notEqual(a, voterHash("11111111-2222-3333-4444-555555555556"));
+    assert.notEqual(a, roomHash("11111111-2222-3333-4444-555555555555"), "voter and room hashes never collide");
   });
   await check("SIG-3", "the room hash is one-way, stable and short", () => {
     const h = roomHash("11111111-2222-3333-4444-555555555555");

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminConfig } from "@/lib/admin/config";
 import { safeEqual, verifyPassword, verifyTotp } from "@/lib/admin/crypto";
+import { consumeTotp } from "@/lib/admin/totp-once";
 import { adminHeaders, clientIp, isSecure, newSessionToken, sameOrigin, sessionCookie } from "@/lib/admin/session";
 import { beginAttempt } from "@/lib/admin/throttle";
 import { logLater } from "@/lib/admin/events";
@@ -42,7 +43,9 @@ export async function POST(req: Request) {
   // All three checks always run, so a wrong username costs the same time as a wrong password.
   const userOk = safeEqual(username, cfg.username);
   const passOk = await verifyPassword(password, cfg.passwordHash);
-  const totpOk = verifyTotp(totp, cfg.totpSecret);
+  // The code is checked (and used up) only after the username and password are right, so a wrong
+  // password can't burn the owner's current code.
+  const totpOk = userOk && passOk ? await consumeTotp(totp, cfg.totpSecret, "login") : verifyTotp(totp, cfg.totpSecret);
 
   if (!(userOk && passOk && totpOk)) {
     const reason = !(userOk && passOk) ? "bad_credentials" : "bad_totp";

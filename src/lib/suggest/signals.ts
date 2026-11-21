@@ -46,11 +46,24 @@ export function cleanEvents(raw: unknown): SignalItem[] {
   return out;
 }
 
-/** A one-way hash of the room, so reports from one room count once. The room itself isn't stored. */
-export function roomHash(roomId: string): string {
-  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || "bawaal-signals";
-  return createHmac("sha256", secret).update(`room:${roomId}`).digest("hex").slice(0, 32);
+/** The secret that keys the one-way hashes. A dedicated SIGNAL_SECRET is best (rotating the
+ *  service-role key then doesn't reset vote counts); the service-role key is the fallback. */
+function signalSecret(): string {
+  return process.env.SIGNAL_SECRET?.trim() || process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || "bawaal-signals";
 }
+
+/** A one-way hash of the room. Kept for older code paths; votes are counted per host account now. */
+export function roomHash(roomId: string): string {
+  return createHmac("sha256", signalSecret()).update(`room:${roomId}`).digest("hex").slice(0, 32);
+}
+
+/** A one-way hash of the host's account: each host counts once per item, event and day. */
+export function voterHash(userId: string): string {
+  return createHmac("sha256", signalSecret()).update(`voter:${userId}`).digest("hex").slice(0, 32);
+}
+
+/** Different hosts needed before the flip/pass rule switches an item off. */
+export const MIN_VOTERS = 5;
 
 export interface Totals {
   text_norm: string;
@@ -58,33 +71,51 @@ export interface Totals {
   done: number;
   passed: number;
   flipped: number;
+  /** Different host accounts that reported it. */
   reported_rooms: number;
+  /** Different host accounts that sent any signal for it (absent = not known). */
+  voters?: number;
 }
 
-/** Which items should be switched off, and why. */
+/**
+ * Which items should be switched off, and why. Both rules need several different hosts, so one host
+ * (however many rooms they open or batches they send) can't switch an item off alone.
+ */
 export function retireDecisions(rows: Totals[]): { reports: string[]; signals: string[] } {
   const reports: string[] = [];
   const signals: string[] = [];
   for (const r of rows) {
     if (r.reported_rooms >= REPORT_ROOMS) reports.push(r.text_norm);
-    else if (r.shown >= MIN_SHOWN && (r.flipped + r.passed) / r.shown >= RETIRE_RATE) signals.push(r.text_norm);
+    else if (r.shown >= MIN_SHOWN && (r.voters ?? 0) >= MIN_VOTERS && (r.flipped + r.passed) / r.shown >= RETIRE_RATE) signals.push(r.text_norm);
   }
   return { reports, signals };
 }
 
-/** Records signals and switches off what crossed a line. Returns counts, or null without a database. */
-export async function recordSignals(kind: string, category: string, roomId: string, items: SignalItem[]) {
+/**
+ * Records signals from one host and switches off what crossed a line. Only real cards count: items
+ * in `builtin` (the built-in deck's texts) or library items this host was served. Before migration
+ * 0015 nothing is recorded (the old per-room counting could be gamed). Null without a database.
+ */
+export async function recordSignals(kind: string, category: string, userId: string, items: SignalItem[], builtin: string[] = []) {
   const db = getServiceClient();
   if (!db || !items.length) return null;
-  const { data, error } = await db.rpc("signal_add", { p_kind: kind, p_category: category, p_room_hash: roomHash(roomId), p_items: items });
+  const { data, error } = await db.rpc("signal_add_v2", {
+    p_kind: kind,
+    p_category: category,
+    p_voter: voterHash(userId),
+    p_user: userId,
+    p_items: items,
+    p_builtin: builtin.slice(0, 500),
+  });
   if (error || !Array.isArray(data)) return null;
-  const rows = (data as Record<string, unknown>[]).map((r) => ({
+  const rows: Totals[] = (data as Record<string, unknown>[]).map((r) => ({
     text_norm: String(r.text_norm),
     shown: Number(r.shown) || 0,
     done: Number(r.done) || 0,
     passed: Number(r.passed) || 0,
     flipped: Number(r.flipped) || 0,
-    reported_rooms: Number(r.reported_rooms) || 0,
+    reported_rooms: Number(r.reported_voters) || 0,
+    voters: Number(r.voters) || 0,
   }));
   const d = retireDecisions(rows);
   let off = 0;

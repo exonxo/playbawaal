@@ -25,6 +25,21 @@ export interface ContentRule {
 export const RULE_TYPES: RuleType[] = ["block", "allow", "topic"];
 export const MATCH_TYPES: MatchType[] = ["word", "pattern"];
 export const MAX_PATTERN = 200;
+/** Patterns (regular expressions) are kept short and simple: they run on every AI reply. */
+export const MAX_REGEX = 100;
+
+/**
+ * True when a pattern could take a very long time on some text ("catastrophic backtracking"):
+ * a repeated group that itself repeats, like (a+)+ or (\w*)*, or a back-reference.
+ */
+export function slowPattern(p: string): boolean {
+  if (/\\[1-9]|\\k</.test(p)) return true; // back-references
+  // A group with a quantifier inside, followed by another quantifier.
+  if (/\((?:[^()\\]|\\.)*[+*}](?:[^()\\]|\\.)*\)\s*(?:[+*]|\{\d)/.test(p)) return true;
+  // A repeated group of alternatives that can match the same text, like (a|a)* or (a|ab)+.
+  if (/\((?:[^()\\]|\\.)*\|(?:[^()\\]|\\.)*\)\s*(?:[+*]|\{\d)/.test(p)) return true;
+  return false;
+}
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -33,7 +48,8 @@ export function compileRule(r: Pick<ContentRule, "match_type" | "pattern">): Reg
   const p = r.pattern.trim();
   if (!p || p.length > MAX_PATTERN) return null;
   try {
-    if (r.match_type === "pattern") return new RegExp(p, "giu");
+    // A slow or over-long pattern saved before these checks existed is skipped, never run.
+    if (r.match_type === "pattern") return p.length > MAX_REGEX || slowPattern(p) ? null : new RegExp(p, "giu");
     // Whole word or phrase: not part of a longer word. Spaces in the phrase match any spacing.
     const body = p.split(/\s+/).map(escape).join("\\s+");
     return new RegExp(`(?<![\\p{L}\\p{N}])${body}(?![\\p{L}\\p{N}])`, "giu");
@@ -48,6 +64,8 @@ export function ruleProblem(r: Pick<ContentRule, "match_type" | "pattern">): str
   if (!p) return "empty";
   if (p.length > MAX_PATTERN) return "too_long";
   if (r.match_type === "pattern") {
+    if (p.length > MAX_REGEX) return "pattern_too_long";
+    if (slowPattern(p)) return "pattern_too_complex";
     try {
       new RegExp(p, "giu");
     } catch {

@@ -1,4 +1,5 @@
 import { getServerSupabase } from "./supabase/server";
+import { getServiceClient } from "./supabase/service";
 import { makeRoomCode } from "./util";
 
 /** Rooms are valid for 24 hours after creation. */
@@ -34,7 +35,9 @@ export async function findOwnRoom(code: string, userId: string) {
 export type RoomLookup = { exists: boolean; hostKey: string | null; ended: boolean };
 
 export async function lookupRoom(code: string): Promise<RoomLookup> {
-  const supabase = await getServerSupabase();
+  // After 0015 only the server may call room_lookup / room_is_ended, so use the service client
+  // when there is one; the signed-in user's client still works on older databases.
+  const supabase = getServiceClient() ?? (await getServerSupabase());
   if (!supabase) return { exists: false, hostKey: null, ended: false };
   const upper = code.toUpperCase();
   const rpc = await supabase.rpc("room_lookup", { p_code: upper });
