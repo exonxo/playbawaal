@@ -2,6 +2,8 @@ import { EMOJI_PUZZLES, type EmojiPuzzle } from "@/content/emoji-picture";
 import type { Level } from "@/lib/types";
 import { getServiceClient } from "../supabase/service";
 import { validateGeminiPayload } from "./validate";
+import { isBottleTone, type BottleTone } from "@/content/spin-bottle";
+import type { BottleBatch } from "./bottle";
 
 /**
  * The content library (migration 0010). Every item the AI services make is kept and served again to
@@ -15,7 +17,7 @@ import { validateGeminiPayload } from "./validate";
  * skipped and the app behaves as it did before.
  */
 
-export const LIBRARY_KINDS = ["chor-kaun-topic", "emoji-puzzle", "dare", "kbc-question"] as const;
+export const LIBRARY_KINDS = ["chor-kaun-topic", "emoji-puzzle", "dare", "kbc-question", "bottle-prompts"] as const;
 export type LibraryKind = (typeof LIBRARY_KINDS)[number];
 
 export const GAME_FOR: Record<LibraryKind, string> = {
@@ -23,7 +25,17 @@ export const GAME_FOR: Record<LibraryKind, string> = {
   "emoji-puzzle": "emoji-picture",
   dare: "dare",
   "kbc-question": "kaun-banega-champion",
+  "bottle-prompts": "spin-bottle",
 };
+
+/** Spin the Bottle (0013): one library row per prompt, category = the mood. A game asks for this many
+ *  and needs at least BOTTLE_MIN unseen ones, otherwise the AI is asked for a fresh batch. */
+export const BOTTLE_PICK = 24;
+export const BOTTLE_MIN = 12;
+
+function toneOf(context: Record<string, unknown>): BottleTone {
+  return isBottleTone(context.tone) ? context.tone : "family";
+}
 
 export const LANG = "en";
 
@@ -79,6 +91,9 @@ export function pickPlan(kind: LibraryKind, context: Record<string, unknown>) {
     const categories = level === "adults" ? ["family", "adults"] : level === "family" ? ["family"] : ["none"];
     return { categories, count, min: 1, excludeNorms, excludeIds: [] as string[], level };
   }
+  if (kind === "bottle-prompts") {
+    return { categories: [toneOf(context)], count: BOTTLE_PICK, min: BOTTLE_MIN, excludeNorms, excludeIds: [] as string[], level: "family" as Level };
+  }
   const audience = context.audience === "mixed" ? "mixed" : "family";
   return { categories: [audience], count: 1, min: 1, excludeNorms, excludeIds: [] as string[], level: "family" as Level };
 }
@@ -91,6 +106,17 @@ export function shapeServed(kind: LibraryKind, rows: { data: unknown }[], contex
     return validateGeminiPayload(kind, rows.map((r) => r.data), plan.count, 4, plan.level);
   }
   if (kind === "kbc-question") return validateGeminiPayload(kind, rows.map((r) => r.data), pickPlan(kind, context).count);
+  if (kind === "bottle-prompts") {
+    // Rows back into a batch, then the same rule check as a fresh AI batch (for this mood).
+    const batch: BottleBatch = { truths: [], dares: [], social: [] };
+    for (const r of rows) {
+      const d = (r.data ?? {}) as { kind?: unknown; text?: unknown; social?: unknown };
+      if (typeof d.text !== "string") continue;
+      if (d.kind === "truth") batch.truths.push(d.text);
+      else if (d.kind === "dare") (d.social === true ? batch.social : batch.dares).push(d.text);
+    }
+    return validateGeminiPayload(kind, batch, undefined, undefined, undefined, toneOf(context));
+  }
   return validateGeminiPayload(kind, rows[0]?.data);
 }
 
@@ -155,6 +181,16 @@ function rawItems(kind: LibraryKind, data: unknown, context: Record<string, unkn
           ...(typeof expires_at === "string" ? { expires_at } : {}),
         };
       });
+  }
+  if (kind === "bottle-prompts" && data && typeof data === "object") {
+    const b = data as Partial<BottleBatch>;
+    const category = toneOf(context);
+    const list = (v: unknown) => (Array.isArray(v) ? v.filter((t): t is string => typeof t === "string" && !!t.trim()) : []);
+    return [
+      ...list(b.truths).map((text) => ({ category, key: text, data: { kind: "truth", text } as Record<string, unknown> })),
+      ...list(b.dares).map((text) => ({ category, key: text, data: { kind: "dare", text } as Record<string, unknown> })),
+      ...list(b.social).map((text) => ({ category, key: text, data: { kind: "dare", text, social: true } as Record<string, unknown> })),
+    ];
   }
   if (kind === "dare" && data && typeof data === "object") {
     const d = data as { text?: unknown };

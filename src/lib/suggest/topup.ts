@@ -20,6 +20,7 @@ import { buildPrompt } from "./prompts";
 import { tmdbConfigured } from "./tmdb";
 import { validateGeminiPayload } from "./validate";
 import { makeNewsQuestions, saveNews, type NewsStats } from "./news";
+import { BOTTLE_TONES } from "@/content/spin-bottle";
 
 export const TOPUP_EVERY_DAYS = 7;
 export const TOPUP_MOVIES = 40;
@@ -34,6 +35,7 @@ const NEWS_RESERVE_MS = 15_000;
 const ALL_LANGS = "hi|ta|te|ml|kn|bn|mr|pa|gu";
 const CHOR_THEMES = ["Indian food", "Festivals", "Places in India", "Cricket", "Indian sweets", "Street food", "Indian states", "Kitchen items", "Wedding rituals", "Indian trains"];
 const DARE_THEMES = ["Family party", "Diwali night", "Wedding season", "Road trip", "Cricket match night", "Monsoon evening"];
+const BOTTLE_THEMES = ["Hostel and school life", "Weddings and family functions", "Monday mornings", "Bollywood", "Cricket", "Road trips", "Festivals at home", "Phones and group chats"];
 const TEMPERATURE = 0.7;
 
 export interface TopupResult {
@@ -48,6 +50,8 @@ export interface TopupResult {
   emoji: { movies: number; made: number; kept: number; rejected: number; stored: number; reasons: Record<string, number> };
   chor: { movie: number; ai: number; kept: number; stored: number };
   dare: { kept: number; stored: number };
+  /** Spin the Bottle: one AI batch per run for one mood, a different mood each week. */
+  bottle: { tone: string; kept: number; stored: number };
   news: { sources?: NewsStats["sources"]; fetched: number; made: number; kept: number; rejected: number; stored: number; reasons: Record<string, number> };
   providers: Record<string, number>;
   /** Why Chor Kaun / dare calls produced nothing ("no_answer": every AI service failed or was refused). */
@@ -91,6 +95,7 @@ export async function runTopup(trigger: "cron" | "admin", budgetMs = 45_000): Pr
     emoji: { movies: 0, made: 0, kept: 0, rejected: 0, stored: 0, reasons: {} },
     chor: { movie: 0, ai: 0, kept: 0, stored: 0 },
     dare: { kept: 0, stored: 0 },
+    bottle: { tone: "", kept: 0, stored: 0 },
     news: { fetched: 0, made: 0, kept: 0, rejected: 0, stored: 0, reasons: {} },
     providers: {},
     ms: 0,
@@ -157,6 +162,25 @@ export async function runTopup(trigger: "cron" | "admin", budgetMs = 45_000): Pr
   res.dare.kept = dareItems.length;
   res.dare.stored = dareItems.length ? ((await saveToLibrary("dare", dareItems, "cron:llm")) ?? 0) : 0;
 
+  // 2b. Spin the Bottle: one batch (about 28 prompts) for this week's mood. Skipped when time is short,
+  // so the emoji step keeps most of the budget.
+  if (left() > 25_000) {
+    const tone = BOTTLE_TONES[week(start) % BOTTLE_TONES.length];
+    const context = { tone, theme: BOTTLE_THEMES[week(start) % BOTTLE_THEMES.length], avoid: [] as string[] };
+    res.bottle.tone = tone;
+    stats.made++;
+    const r = await runChain("bottle-prompts", buildPrompt("bottle-prompts", context), (raw) => validateGeminiPayload("bottle-prompts", raw, undefined, undefined, undefined, tone), { allow, temperature: TEMPERATURE });
+    if (!r) {
+      stats.rejected++;
+      stats.reasons.no_answer = (stats.reasons.no_answer ?? 0) + 1;
+    } else {
+      addProviders({ [r.provider]: 1 });
+      const items = itemsFrom("bottle-prompts", r.data, context);
+      res.bottle.kept = items.length;
+      res.bottle.stored = items.length ? ((await saveToLibrary("bottle-prompts", items, "cron:llm")) ?? 0) : 0;
+    }
+  }
+
   // 3. Emoji puzzles for movies not yet in the library, most-rated first. The main job, so it goes
   // before news; it stops starting batches early enough to leave the news step its time.
   const movies = await pickMovies(ALL_LANGS, TOPUP_MOVIES, await libraryTexts("emoji-puzzle"));
@@ -181,10 +205,10 @@ export async function runTopup(trigger: "cron" | "admin", budgetMs = 45_000): Pr
   res.done = res.emoji.kept >= TOPUP_TARGET_MIN || movies.length === 0;
 
   res.made = res.emoji.made + res.chor.movie + stats.made + res.news.made;
-  res.kept = res.emoji.kept + res.chor.kept + res.dare.kept + res.news.kept;
+  res.kept = res.emoji.kept + res.chor.kept + res.dare.kept + res.bottle.kept + res.news.kept;
   res.rejected = res.emoji.rejected + stats.rejected + res.news.rejected;
   res.otherReasons = stats.reasons;
-  res.stored = res.emoji.stored + res.chor.stored + res.dare.stored + res.news.stored;
+  res.stored = res.emoji.stored + res.chor.stored + res.dare.stored + res.bottle.stored + res.news.stored;
   return record(res, start);
 }
 

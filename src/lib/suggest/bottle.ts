@@ -172,7 +172,7 @@ const RULES = [
   "Specific beats generic: 'What's your most unhinged 2 AM Zomato order?' beats 'What's your favourite food?'.",
 ];
 
-export function buildBottlePrompt(tone: BottleTone, avoid: string[]): string {
+export function buildBottlePrompt(tone: BottleTone, avoid: string[], theme?: string): string {
   const deck = BOTTLE_PROMPTS[tone];
   const examples = shuffle(deck.filter((p) => !p.social)).slice(0, 10).map((p) => `- (${p.kind}) ${p.text}`);
   const socialExamples = deck.filter((p) => p.social).slice(0, 3).map((p) => `- ${p.text}`);
@@ -190,6 +190,8 @@ export function buildBottlePrompt(tone: BottleTone, avoid: string[]): string {
       ...socialExamples,
     );
   }
+  // The admin's topic for "Generate more" / the weekly top-up (already cleaned by cleanTheme).
+  if (theme) parts.push(`Theme for this batch: ${theme}. Most prompts should fit it; the rules above still come first.`);
   if (avoid.length) parts.push(`Do NOT repeat or closely resemble these (already shown): ${JSON.stringify(avoid.slice(0, 30))}.`);
   parts.push(
     `Reply with ONLY one JSON object, no prose: {"truths": ["14 truths"], "dares": ["14 dares"]${adult ? ', "social": ["2 social dares"]' : ""}}`,

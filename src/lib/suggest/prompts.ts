@@ -71,7 +71,7 @@ function themeLine(theme: string): string {
 
 export function buildPrompt(kind: SuggestKind, context: Record<string, unknown>): string {
   // Spin the Bottle has its own prompt with tone rules and handwritten examples.
-  if (kind === "bottle-prompts") return buildBottlePrompt(isBottleTone(context.tone) ? context.tone : "family", Array.isArray(context.avoid) ? (context.avoid as string[]) : []);
+  if (kind === "bottle-prompts") return buildBottlePrompt(isBottleTone(context.tone) ? context.tone : "family", Array.isArray(context.avoid) ? (context.avoid as string[]) : [], typeof context.theme === "string" ? context.theme : undefined);
   const avoid = Array.isArray(context.avoid) ? (context.avoid as string[]) : [];
   const fixedTheme = typeof context.theme === "string" && context.theme ? context.theme : null;
   const theme = fixedTheme ?? pickTheme(kind);

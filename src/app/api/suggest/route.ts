@@ -172,9 +172,10 @@ export async function POST(req: Request) {
     logLater("api_error", { route: "suggest", status: 500 });
   }
 
-  // No AI answer: a smaller set from the library (at least 3 emoji puzzles) beats the fixed lists.
-  if (useLibrary && isLibraryKind(kind) && kind === "emoji-puzzle") {
-    const partial = await pickFromLibrary(kind, context, viewer, { min: 3 });
+  // No AI answer: a smaller set from the library (at least 3 emoji puzzles, or 6 bottle prompts)
+  // beats the fixed lists.
+  if (useLibrary && isLibraryKind(kind) && (kind === "emoji-puzzle" || kind === "bottle-prompts")) {
+    const partial = await pickFromLibrary(kind, context, viewer, { min: kind === "emoji-puzzle" ? 3 : 6 });
     if (partial != null) {
       logLater("suggest", { suggest_kind: kind, provider: "library", fallback: true, ms: 0, reason: "all_providers_failed" });
       return ok(partial, true);
