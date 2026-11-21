@@ -32,6 +32,8 @@ const SHAPES: Record<SuggestKind, string> = {
   "next-game": `{"gameId": "one of the ids below", "reason": "one friendly sentence"}`,
   dare: `{"text": "one short dare or icebreaker"}`,
   "bottle-prompts": `{"truths": ["..."], "dares": ["..."], "social": ["..."]}`,
+  // Not used by buildPrompt: news questions have their own prompts (news.ts).
+  "kbc-question": `{"items": []}`,
 };
 
 /** A random theme for variety. Chosen on the server, so the model can't be steered by the browser. */

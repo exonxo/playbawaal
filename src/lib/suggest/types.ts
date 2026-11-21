@@ -3,7 +3,9 @@ import type { EmojiPuzzle } from "@/content/emoji-picture";
 import type { Level } from "@/lib/types";
 import type { BottleTone } from "@/content/spin-bottle";
 
-export const SUGGEST_KINDS = ["chor-kaun-topic", "emoji-puzzle", "next-game", "dare", "bottle-prompts"] as const;
+/** "kbc-question" is served from the content library only: news questions are made in the weekly
+ *  top-up or from the admin panel, never while a game waits. */
+export const SUGGEST_KINDS = ["chor-kaun-topic", "emoji-puzzle", "next-game", "dare", "kbc-question", "bottle-prompts"] as const;
 export type SuggestKind = (typeof SUGGEST_KINDS)[number];
 
 export type SuggestContext =

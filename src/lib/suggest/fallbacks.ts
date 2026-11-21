@@ -102,6 +102,9 @@ export function fallbackFor(kind: SuggestKind, context: Record<string, unknown>)
       return fallbackDare();
     case "bottle-prompts":
       return fallbackBottleBatch(isBottleTone(context.tone) ? context.tone : "family");
+    case "kbc-question":
+      // No built-in news: the game keeps its own question bank.
+      return [];
     default:
       return null;
   }
