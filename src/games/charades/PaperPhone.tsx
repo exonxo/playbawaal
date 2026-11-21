@@ -519,7 +519,7 @@ export function Phone({ view, priv, me, players, send, now, isHost, hostAct }: P
         )}
 
         <p className="text-center text-p-note text-muted">
-          Koi timer nahi — aaram se khelo · Turn {view.turns + 1}
+          Koi time limit nahi — aaram se khelo · Turn {view.turns + 1}
         </p>
       </div>
     </MotionConfig>

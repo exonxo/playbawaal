@@ -54,8 +54,21 @@ export function PlayerScreen({ code }: { code: string }) {
   useEffect(() => {
     if (!room || sawRoom.current) return;
     sawRoom.current = true;
-    if (room.phase === "playing") setLateJoin(true);
-  }, [room]);
+    if (room.phase !== "playing") return;
+    // A refresh mid-game isn't a late join: show the welcome once per game on this tab.
+    const key = `bawaal-late-${code}-${room.gameId ?? ""}`;
+    try {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "1");
+    } catch {}
+    setLateJoin(true);
+  }, [room, code]);
+  // The welcome hides itself after a few seconds.
+  useEffect(() => {
+    if (!lateJoin) return;
+    const t = setTimeout(() => setLateJoin(false), 7000);
+    return () => clearTimeout(t);
+  }, [lateJoin]);
   useOnChange(room?.phase, (next) => {
     if (next === "playing") playSfx("whoosh");
     else setLateJoin(false);
@@ -146,7 +159,9 @@ export function PlayerScreen({ code }: { code: string }) {
             <div className="rise-in cut mb-4 flex items-start gap-3 rounded-cut bg-card p-3">
               <div className="min-w-0 flex-1">
                 <div className="font-display text-p-body font-extrabold">Aa gaye! {info.name} has already started</div>
-                <div className="text-p-body text-muted">{info.quickTip}</div>
+                <div className="text-p-body text-muted">
+                  {FIXED_SEATS.has(info.id) ? "Is round ki seats bhar gayi hain — dekhte raho, agle round mein aap bhi khel sakte ho." : info.quickTip}
+                </div>
               </div>
               <button aria-label="Dismiss" onClick={() => setLateJoin(false)} className="-m-2 flex h-11 w-11 shrink-0 items-center justify-center text-muted">
                 <X className="h-4 w-4" />
@@ -198,6 +213,9 @@ export function PlayerScreen({ code }: { code: string }) {
     </RoomShell>
   );
 }
+
+/** Games with a fixed number of seats: a late joiner watches this round. */
+const FIXED_SEATS = new Set(["raja-mantri", "ludo-yatra"]);
 
 /** Waiting for the host. After 15 seconds, says what might be wrong and offers a way back. */
 function FindingParty({ code }: { code: string }) {
