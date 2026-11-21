@@ -169,7 +169,7 @@ export async function runTopup(trigger: "cron" | "admin", budgetMs = 45_000): Pr
     const context = { tone, theme: BOTTLE_THEMES[week(start) % BOTTLE_THEMES.length], avoid: [] as string[] };
     res.bottle.tone = tone;
     stats.made++;
-    const r = await runChain("bottle-prompts", buildPrompt("bottle-prompts", context), (raw) => validateGeminiPayload("bottle-prompts", raw, undefined, undefined, undefined, tone), { allow, temperature: TEMPERATURE });
+    const r = await runChain("bottle-prompts", buildPrompt("bottle-prompts", context), (raw) => validateGeminiPayload("bottle-prompts", raw, undefined, undefined, undefined, tone), { allow, temperature: TEMPERATURE, tone });
     if (!r) {
       stats.rejected++;
       stats.reasons.no_answer = (stats.reasons.no_answer ?? 0) + 1;

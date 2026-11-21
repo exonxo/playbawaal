@@ -1,6 +1,11 @@
 import { callGemini, ProviderHttpError } from "./gemini";
 import { callOpenAICompat } from "./openai-compat";
 import { buildPrompt, unwrapPayload } from "./prompts";
+import { applyRules, loadRules, ruleGuidance } from "./rules";
+import { applyBottlePolicy, offFor, policyGuidance } from "./policy-core";
+import { loadBottlePolicy } from "./policy";
+import type { BottleBatch } from "./bottle";
+import type { BottleTone } from "@/content/spin-bottle";
 import type { SuggestKind } from "./types";
 
 /**
@@ -155,5 +160,31 @@ export function makeChain(providers: Provider[], now: () => number = Date.now) {
 
 const defaultChain = makeChain(PROVIDERS);
 export const providerStatus = defaultChain.status;
-export const runChain = defaultChain.run;
+
+export interface RunOptions {
+  allow?: (name: string) => boolean;
+  temperature?: number;
+  schema?: Record<string, unknown>;
+  /** Spin the Bottle: the mood, so its strictness settings apply. */
+  tone?: BottleTone;
+}
+
+/**
+ * Runs the AI chain with the admin's content rules and strictness settings (0014) applied: they are
+ * added to the instructions, and anything that still breaks them is dropped from the reply before
+ * `accept`'s result is returned. A reply with nothing usable left counts as a bad answer.
+ */
+export async function runChain(kind: SuggestKind, prompt: string, accept: (raw: unknown) => unknown | null, opts?: RunOptions): Promise<ChainResult | null> {
+  const rules = await loadRules();
+  const off = kind === "bottle-prompts" && opts?.tone ? offFor(await loadBottlePolicy(), opts.tone) : [];
+  const extra = [ruleGuidance(kind, rules), opts?.tone ? policyGuidance(off, opts.tone) : ""].filter(Boolean).join("\n");
+  const screened = (raw: unknown) => {
+    const v = accept(raw);
+    if (v == null) return null;
+    const ruled = applyRules(kind, v, rules);
+    if (ruled == null || !off.length) return ruled;
+    return applyBottlePolicy(ruled as BottleBatch, off);
+  };
+  return defaultChain.run(kind, extra ? `${prompt}\n${extra}` : prompt, screened, opts);
+}
 export { buildPrompt };

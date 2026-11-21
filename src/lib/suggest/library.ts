@@ -4,6 +4,9 @@ import { getServiceClient } from "../supabase/service";
 import { validateGeminiPayload } from "./validate";
 import { isBottleTone, type BottleTone } from "@/content/spin-bottle";
 import type { BottleBatch } from "./bottle";
+import { applyRules, loadRules } from "./rules";
+import { applyBottlePolicy, offFor } from "./policy-core";
+import { loadBottlePolicy } from "./policy";
 
 /**
  * The content library (migration 0010). Every item the AI services make is kept and served again to
@@ -147,7 +150,12 @@ export async function pickFromLibrary(
       p_exclude_ids: plan.excludeIds.slice(0, 60),
     });
     if (error || !Array.isArray(data)) return null;
-    return shapeServed(kind, data as { data: unknown }[], context);
+    const shaped = shapeServed(kind, data as { data: unknown }[], context);
+    if (shaped == null) return null;
+    // Rules and strictness settings added after an item was saved still apply when it's served.
+    const ruled = applyRules(kind, shaped, await loadRules());
+    if (ruled == null || kind !== "bottle-prompts") return ruled;
+    return applyBottlePolicy(ruled as BottleBatch, offFor(await loadBottlePolicy(), toneOf(context)));
   } catch {
     return null;
   }
