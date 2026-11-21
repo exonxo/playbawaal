@@ -3,6 +3,9 @@
  * Round-based games that keep going until the host stops them (Chor Kaun,
  * Charades, Antakshari, Raja Mantri, Odd Word Out) never return true.
  */
+/** Games that end on their own (a winner, the last round). Stopping one early is not a result. */
+export const ENDS_ON_ITS_OWN = new Set(["kaun-banega-champion", "jaldi-bolo", "housie", "puno", "ludo-yatra", "draw-guess", "emoji-picture", "sound-guru"]);
+
 export function isGameOver(gameId: string | null | undefined, view: unknown): boolean {
   if (!gameId || !view || typeof view !== "object") return false;
   const v = view as { phase?: unknown; done?: unknown };

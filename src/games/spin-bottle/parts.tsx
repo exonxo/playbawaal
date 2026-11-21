@@ -77,7 +77,7 @@ export function BottleCircle({
             <span className={`rounded-full ${hit ? "ring-4 ring-turmeric ring-offset-2 ring-offset-bg" : ""}`}>
               <Sticker id={p?.avatar} size={sticker} />
             </span>
-            <span className="mt-0.5 max-w-[7ch] truncate rounded-full bg-paper px-1.5 text-[clamp(0.7rem,1.6vh,1.1rem)] font-bold text-ink">
+            <span className="mt-0.5 line-clamp-2 max-w-[9ch] break-words rounded-lg bg-paper px-1.5 text-center text-[clamp(0.8rem,2vh,1.5rem)] font-bold leading-tight text-ink">
               {id === me ? "Aap" : (p?.name ?? "?")}
             </span>
           </motion.div>

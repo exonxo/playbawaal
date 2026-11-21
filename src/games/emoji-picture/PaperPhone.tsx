@@ -255,12 +255,15 @@ function HintNote({ hint }: { hint: string }) {
 /* ------------------------------------------------------------------ */
 
 function AnswerStrip({
+  emojis,
   category,
   tries,
   got,
   points,
   onSubmit,
 }: {
+  /** Shown small right above the box while typing: with the keyboard open, the big card scrolls away. */
+  emojis?: string;
   category: string;
   tries: number;
   got: boolean;
@@ -269,6 +272,7 @@ function AnswerStrip({
 }) {
   const [value, setValue] = useState("");
   const [last, setLast] = useState("");
+  const [typing, setTyping] = useState(false);
   const inputId = useId();
   const msgId = useId();
   const wrong = tries > 0 && !got;
@@ -298,6 +302,11 @@ function AnswerStrip({
 
   return (
     <div>
+      {typing && emojis && (
+        <div aria-hidden className="cut mb-2 rounded-cut bg-paper px-3 py-1.5 text-center text-[2rem] leading-tight">
+          {emojis}
+        </div>
+      )}
       <form
         key={tries}
         className={`flex items-stretch gap-2.5 ${wrong ? "shake" : ""}`}
@@ -318,6 +327,13 @@ function AnswerStrip({
             id={inputId}
             value={value}
             onChange={(e) => setValue(e.target.value)}
+            onFocus={(e) => {
+              setTyping(true);
+              // Keep the clue strip and the box in view above the keyboard.
+              const el = e.currentTarget;
+              setTimeout(() => el.closest("form")?.parentElement?.scrollIntoView({ block: "end", behavior: "smooth" }), 250);
+            }}
+            onBlur={() => setTyping(false)}
             autoComplete="off"
             autoCapitalize="off"
             autoCorrect="off"
@@ -596,7 +612,7 @@ export function Phone({ view, me, players, send, now, isHost, hostAct }: PhonePr
               <AnimatePresence>{showHint && !got && <HintNote key="hint" hint={view.hint} />}</AnimatePresence>
             </div>
 
-            {question && <AnswerStrip key={view.idx} category={view.category} tries={tries} got={got} points={pointsFor(myRank)} onSubmit={(t) => send("answer", t)} />}
+            {question && <AnswerStrip key={view.idx} emojis={view.emojis} category={view.category} tries={tries} got={got} points={pointsFor(myRank)} onSubmit={(t) => send("answer", t)} />}
             {question && got && <p className="-mt-1 text-p-body font-semibold text-muted">Shh… baaki log abhi soch rahe hain.</p>}
 
             <Solvers view={view} players={players} me={me} reveal={!question} />

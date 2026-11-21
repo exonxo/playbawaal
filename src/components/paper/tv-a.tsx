@@ -16,7 +16,8 @@ const STAGE_H = "h-[calc(100dvh-11rem)] min-h-[30rem]";
 
 /** Fluid type steps for the TV, from far-away labels to hero numbers. */
 export const tv = {
-  label: "text-[clamp(0.85rem,1.9vh,1.35rem)] font-bold uppercase tracking-[0.18em]",
+  // Read from a sofa: at least 20px even on a 720p TV.
+  label: "text-[clamp(1.25rem,2.4vh,1.6rem)] font-bold uppercase tracking-[0.16em]",
   body: "text-[clamp(1.05rem,2.6vh,1.9rem)]",
   lead: "text-[clamp(1.35rem,3.4vh,2.6rem)]",
   title: "text-[clamp(2rem,5.6vh,4.4rem)] leading-[1.02]",
@@ -155,12 +156,30 @@ export function TvBoard({
   className?: string;
   size?: "md" | "lg";
 }) {
-  const shown = rows.slice(0, max);
   const lg = size === "lg";
+  // Only the rows that really fit are shown (a 720p TV fits fewer), and "+N aur" counts the rest.
+  const olRef = useRef<HTMLOListElement>(null);
+  const [fit, setFit] = useState(max);
+  useEffect(() => {
+    const ol = olRef.current;
+    if (!ol) return;
+    const measure = () => {
+      const row = ol.querySelector("li");
+      if (!row) return;
+      const rows = Math.max(1, Math.floor(ol.clientHeight / row.getBoundingClientRect().height));
+      setFit((f) => (f === rows ? f : rows));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(ol);
+    return () => ro.disconnect();
+  }, [rows.length]);
+  const limit = Math.min(max, fit);
+  const shown = rows.length > limit ? rows.slice(0, Math.max(1, limit - 1)) : rows;
   return (
     <div className={`flex min-h-0 flex-col ${className}`}>
       <TvLabel className="mb-[1vh]">{title}</TvLabel>
-      <ol className="min-h-0 flex-1 overflow-hidden">
+      <ol ref={olRef} className="min-h-0 flex-1 overflow-hidden">
         {shown.map((r, i) => (
           <motion.li
             key={r.p.id}
@@ -188,7 +207,7 @@ export function TvBoard({
           </motion.li>
         ))}
       </ol>
-      {rows.length > max && <div className={`pt-[0.6vh] text-ink/55 ${tv.body}`}>+{rows.length - max} aur</div>}
+      {rows.length > shown.length && <div className={`pt-[0.6vh] font-bold text-ink/55 ${tv.body}`}>+{rows.length - shown.length} aur</div>}
     </div>
   );
 }

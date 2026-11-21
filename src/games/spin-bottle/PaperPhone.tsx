@@ -111,7 +111,8 @@ export function Phone({ view, priv, me, players, send, now, isHost, hostAct }: P
         <p className="text-center text-p-body font-semibold">{isTarget ? "Aapka card:" : `${targetName} ka card:`}</p>
         <PromptCard view={view} players={players} />
         {isTarget ? (
-          <div className="space-y-2">
+          // Pinned to the bottom on small phones, so the buttons are never below the fold.
+          <div className="sticky bottom-0 z-20 -mx-4 space-y-2 border-t-[1.5px] border-ink/15 bg-bg px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
             <PaperButton size="lg" tone="ink" className="w-full" onClick={() => { mine("ding", 30); send("done"); }}>
               <Check className="h-5 w-5" strokeWidth={2.6} /> Ho gaya!
             </PaperButton>
@@ -147,7 +148,7 @@ export function Phone({ view, priv, me, players, send, now, isHost, hostAct }: P
         </div>
 
         <div className="relative">
-          <BottleCircle view={view} players={players} me={me.id} size={Math.min(width, 340)} now={now} />
+          <BottleCircle view={view} players={players} me={me.id} size={Math.min(width, view.phase === "card" ? 220 : 340)} now={now} />
           <ReactionFloat reactions={view.reactions} players={players} />
         </div>
 

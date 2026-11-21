@@ -112,6 +112,8 @@ export function JoinForm() {
             />
           </div>
 
+          {/* Pinned to the bottom on phones (the sticker grid pushes it below the fold); the error sits right above it. */}
+          <div className="sticky bottom-0 z-20 -mx-4 space-y-2 bg-bg/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 lg:static lg:mx-0 lg:bg-transparent lg:p-0">
           {error && (
             <div id="join-error" role="alert" className="rounded-cut border-[1.5px] border-vermilion bg-card px-4 py-2.5 font-semibold text-vermilion">
               {error.text}
@@ -128,6 +130,7 @@ export function JoinForm() {
           >
             Chalo, join karo
           </BusyPaperButton>
+          </div>
         </form>
       </div>
     </main>

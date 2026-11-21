@@ -9,7 +9,7 @@ import { isSupabaseConfigured } from "@/lib/env";
 import { GameStage } from "@/components/GameStage";
 import { GameOverBar } from "@/components/GameOverBar";
 import { isGameOver } from "@/lib/gameOver";
-import { FINISH_ACTION, REMATCH_ACTION } from "@/lib/room";
+import { REMATCH_ACTION } from "@/lib/room";
 import { ResultsCard } from "@/components/ResultsCard";
 import { paperButtonClass } from "@/components/paper/classes";
 import { BusyPaperButton } from "@/components/loaders";
@@ -116,10 +116,7 @@ export function PlayerScreen({ code }: { code: string }) {
         </div>
       )}
       {!room ? (
-        <div className="flex min-h-[60vh] flex-col items-center justify-center text-center">
-          <p className="breathe font-display text-p-title font-extrabold">Party dhoondh rahe hain…</p>
-          <p className="mt-2 text-p-body text-muted">Make sure the host has room {code} open.</p>
-        </div>
+        <FindingParty code={code} />
       ) : room.phase === "lobby" || !mod || !room.view ? (
         <>
         <ResultsCard result={room.lastResult} />
@@ -172,7 +169,7 @@ export function PlayerScreen({ code }: { code: string }) {
             />
           </div>
           {isGameOver(room.gameId, room.view) && (
-            <GameOverBar players={room.players} meId={me.id} votes={room.rematch ?? []} onRematch={() => send(REMATCH_ACTION)} onLobby={() => send(FINISH_ACTION)} />
+            <GameOverBar players={room.players} meId={me.id} votes={room.rematch ?? []} onRematch={() => send(REMATCH_ACTION)} />
           )}
         </>
       )}
@@ -199,5 +196,31 @@ export function PlayerScreen({ code }: { code: string }) {
         </div>
       </PaperSheet>
     </RoomShell>
+  );
+}
+
+/** Waiting for the host. After 15 seconds, says what might be wrong and offers a way back. */
+function FindingParty({ code }: { code: string }) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setSlow(true), 15_000);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <div className="flex min-h-[60vh] flex-col items-center justify-center text-center" aria-live="polite">
+      <p className={`font-display text-p-title font-extrabold ${slow ? "" : "breathe"}`}>{slow ? "Host nahi mil rahe" : "Party dhoondh rahe hain…"}</p>
+      {slow ? (
+        <>
+          <p className="mt-2 max-w-sm text-p-body text-muted">
+            Check the code <span className="font-bold tracking-[0.2em] text-ink">{code}</span> is right, and ask the host to keep their party page open. We&apos;ll keep trying.
+          </p>
+          <Link href="/join" className={`${paperButtonClass("turmeric")} mt-4`}>
+            Code dobara daalo
+          </Link>
+        </>
+      ) : (
+        <p className="mt-2 text-p-body text-muted">Make sure the host has room {code} open.</p>
+      )}
+    </div>
   );
 }
