@@ -1,17 +1,19 @@
 import type { ChorTopic } from "@/content/chor-kaun";
 import type { EmojiPuzzle } from "@/content/emoji-picture";
 import type { Level } from "@/lib/types";
+import type { BottleTone } from "@/content/spin-bottle";
 
 /** "kbc-question" is served from the content library only: news questions are made in the weekly
  *  top-up or from the admin panel, never while a game waits. */
-export const SUGGEST_KINDS = ["chor-kaun-topic", "emoji-puzzle", "next-game", "dare", "kbc-question"] as const;
+export const SUGGEST_KINDS = ["chor-kaun-topic", "emoji-puzzle", "next-game", "dare", "kbc-question", "bottle-prompts"] as const;
 export type SuggestKind = (typeof SUGGEST_KINDS)[number];
 
 export type SuggestContext =
   | { kind: "chor-kaun-topic"; excludeTopicIds?: string[] }
   | { kind: "emoji-puzzle"; level?: Level; count?: number }
   | { kind: "next-game"; playerCount: number; gamesPlayed?: string[]; mood?: string }
-  | { kind: "dare"; audience?: "family" | "mixed" };
+  | { kind: "dare"; audience?: "family" | "mixed" }
+  | { kind: "bottle-prompts"; tone: BottleTone };
 
 export type ChorKaunTopicResult = ChorTopic & { id: string };
 

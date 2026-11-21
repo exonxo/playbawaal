@@ -322,6 +322,7 @@ const LIBRARY_KINDS: { kind: string; label: string; max: number }[] = [
   { kind: "chor-kaun-topic", label: "Chor Kaun topics", max: 5 },
   { kind: "dare", label: "Dares", max: 5 },
   { kind: "kbc-question", label: "KBC news questions", max: 10 },
+  { kind: "bottle-prompts", label: "Spin the Bottle prompts", max: 60 },
 ];
 
 export function LibraryPanel() {
@@ -331,6 +332,7 @@ export function LibraryPanel() {
   const [kind, setKind] = useState("emoji-puzzle");
   const [count, setCount] = useState(10);
   const [level, setLevel] = useState("family");
+  const [tone, setTone] = useState("family");
   const [theme, setTheme] = useState("");
   const [busy, setBusy] = useState(false);
   const [listKey, setListKey] = useState(0);
@@ -350,7 +352,7 @@ export function LibraryPanel() {
   const generate = async () => {
     setBusy(true);
     setMsg({ text: "Asking the AI services… this can take up to a minute.", bad: false });
-    const r = await act("library.generate", { kind, count: Math.min(count, max), level, audience: "family", theme });
+    const r = await act("library.generate", { kind, count: Math.min(count, max), level, audience: "family", theme, ...(kind === "bottle-prompts" ? { tone } : {}) });
     setBusy(false);
     setMsg(
       r.ok
@@ -407,6 +409,12 @@ export function LibraryPanel() {
             <option value="kids">kids</option><option value="family">family</option><option value="adults">adults</option>
           </select></label>
         )}
+        {kind === "bottle-prompts" && (
+          <label className="text-sm">Mood<select className={input} value={tone} onChange={(e) => setTone(e.target.value)}>
+            <option value="kids">Bacche (kids)</option><option value="family">Parivaar (family)</option>
+            <option value="college">College Gang</option><option value="office">Office Party</option>
+          </select></label>
+        )}
         <button className={button} onClick={generate} disabled={busy || !cleanTheme(theme)}>Generate more</button>
         <a className={button} href={`${base()}/api/data?view=library_csv`} download>Download CSV</a>
       </div>
@@ -424,7 +432,7 @@ interface TopupInfo {
   ranAt: string;
   ok: boolean;
   detail: { trigger?: string; done?: boolean; made?: number; kept?: number; rejected?: number; stored?: number; skipped?: string;
-    emoji?: { movies?: number; kept?: number }; chor?: { movie?: number; ai?: number }; dare?: { kept?: number };
+    emoji?: { movies?: number; kept?: number }; chor?: { movie?: number; ai?: number }; dare?: { kept?: number }; bottle?: { tone?: string; kept?: number };
     news?: { kept?: number; fetched?: number; sources?: Record<string, { ok: boolean; error?: string }> } };
 }
 
@@ -434,7 +442,7 @@ function topupText(t: TopupInfo | null): string {
   const when = new Date(t.ranAt).toLocaleString();
   if (d.skipped) return `Last top-up ${when} (${d.trigger ?? "?"}): skipped, ${d.skipped}.`;
   return `Last top-up ${when} (${d.trigger === "admin" ? "button" : "weekly"}): made ${d.made ?? 0} · kept ${d.kept ?? 0} · rejected ${d.rejected ?? 0} · ${d.stored ?? 0} new in the library ` +
-    `(emoji ${d.emoji?.kept ?? 0} from ${d.emoji?.movies ?? 0} movies, Chor Kaun ${d.chor?.movie ?? 0} movie + ${d.chor?.ai ?? 0} AI, dares ${d.dare?.kept ?? 0}, KBC news ${d.news?.kept ?? 0} from ${d.news?.fetched ?? 0} headlines${
+    `(emoji ${d.emoji?.kept ?? 0} from ${d.emoji?.movies ?? 0} movies, Chor Kaun ${d.chor?.movie ?? 0} movie + ${d.chor?.ai ?? 0} AI, dares ${d.dare?.kept ?? 0}, Spin the Bottle ${d.bottle?.kept ?? 0}${d.bottle?.tone ? ` (${d.bottle.tone})` : ""}, KBC news ${d.news?.kept ?? 0} from ${d.news?.fetched ?? 0} headlines${
       d.news?.sources ? Object.entries(d.news.sources).filter(([, v]) => !v.ok).map(([k, v]) => `; ${k} unavailable (${v.error ?? "error"})`).join("") : ""})${d.done ? "" : " · not finished: tries again tonight"}.`;
 }
 
@@ -460,7 +468,7 @@ function TopupBox({ onRan }: { onRan: () => void }) {
   return (
     <div className={`${box} space-y-2 text-sm`}>
       <p className="font-bold">Weekly top-up</p>
-      <p>Once a week, after the nightly clean-up, the library adds about 40 popular Indian movie puzzles (titles from TMDB, emoji from the AI), a few Chor Kaun topics (about a third movie titles), a couple of dares and about 10 KBC news questions (from NewsAPI and the Bharat News API, checked against the story, served for about 60 days). Only items that pass the checks are saved.</p>
+      <p>Once a week, after the nightly clean-up, the library adds about 40 popular Indian movie puzzles (titles from TMDB, emoji from the AI), a few Chor Kaun topics (about a third movie titles), a couple of dares, one batch of Spin the Bottle prompts (a different mood each week) and about 10 KBC news questions (from NewsAPI and the Bharat News API, checked against the story, served for about 60 days). Only items that pass the checks are saved.</p>
       <p>{t === undefined ? "Loading…" : topupText(t)}</p>
       <button className={button} onClick={run} disabled={busy}>Run top-up now</button>
       {msg && <Msg text={msg.text} bad={msg.bad} />}
@@ -478,7 +486,7 @@ interface LibraryEntry {
   served_count: number;
   created_at: string;
   expires_at?: string | null;
-  data: { emojis?: string; answer?: string; hint?: string; label?: string; words?: string[]; text?: string;
+  data: { emojis?: string; answer?: string; hint?: string; label?: string; words?: string[]; text?: string; kind?: string; social?: boolean;
     q?: string; a?: string; w?: string[]; news?: { source?: string; headline?: string; date?: string; url?: string; outlet?: string } };
 }
 
@@ -520,6 +528,9 @@ function LibraryItems({ kind, onChanged }: { kind: string; onChanged: () => void
               <p><b>{item.data.label}</b>: {(item.data.words ?? []).join(", ")}</p>
             )}
             {kind === "dare" && <p>{item.data.text}</p>}
+            {kind === "bottle-prompts" && (
+              <p><b>{item.data.kind === "truth" ? "Sach" : item.data.social ? "Himmat (social)" : "Himmat"}</b>: {item.data.text}</p>
+            )}
             {kind === "kbc-question" && (
               <>
                 <p><b>{item.data.q}</b></p>

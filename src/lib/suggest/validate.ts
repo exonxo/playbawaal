@@ -3,6 +3,8 @@ import { GAMES } from "@/games/catalog";
 import type { EmojiPuzzle } from "@/content/emoji-picture";
 import type { KbcNews, KbcQuestion } from "@/content/kbc";
 import type { Level } from "@/lib/types";
+import { isBottleTone } from "@/content/spin-bottle";
+import { validateBottleBatch } from "./bottle";
 import { randomId } from "@/lib/util";
 import { fallbackEmojiPuzzles, isEmojiCategory } from "./fallbacks";
 import { isUnsafeSuggestText, type SafetyContext } from "./safety";
@@ -232,6 +234,7 @@ export function validateGeminiPayload(
   contextCount?: number,
   playerCount?: number,
   requestedLevel?: Level,
+  tone?: unknown,
 ): unknown | null {
   switch (kind) {
     case "chor-kaun-topic":
@@ -242,6 +245,8 @@ export function validateGeminiPayload(
       return validateNextGame(raw, playerCount ?? 4);
     case "dare":
       return validateDare(raw);
+    case "bottle-prompts":
+      return validateBottleBatch(raw, isBottleTone(tone) ? tone : "family");
     case "kbc-question":
       return validateKbcQuestions(raw, contextCount ?? 10);
     default:

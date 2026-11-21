@@ -14,6 +14,8 @@ import { AuditUnavailable, auditOrThrow, DESTRUCTIVE, type AdminAction } from ".
 import { verifyTotp } from "./crypto";
 import { insertPending } from "./bank";
 import { isLibraryKind, itemsFrom, saveToLibrary, type LibraryKind } from "../suggest/library";
+import { isBottleTone, type BottleTone } from "@/content/spin-bottle";
+import type { BottleBatch } from "../suggest/bottle";
 import { flagMap, invalidateFlags, knownFlags } from "./flags";
 
 /**
@@ -136,8 +138,22 @@ function screenInto(stats: { made: number; rejected: number; reasons: Record<str
   return r.kept.length ? r.kept : null;
 }
 
+/** Screens one AI reply of Spin the Bottle prompts with the mood's rules, adding to the running counts. */
+function screenBottle(stats: { made: number; rejected: number; reasons: Record<string, number> }, raw: unknown, tone: BottleTone) {
+  const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const offered = ["truths", "dares", "social"].reduce((n, k) => n + (Array.isArray(o[k]) ? (o[k] as unknown[]).length : 0), 0);
+  const v = validateGeminiPayload("bottle-prompts", raw, undefined, undefined, undefined, tone) as BottleBatch | null;
+  const kept = v ? v.truths.length + v.dares.length + v.social.length : 0;
+  stats.made += offered;
+  if (offered > kept) {
+    stats.rejected += offered - kept;
+    stats.reasons.unsafe = (stats.reasons.unsafe ?? 0) + (offered - kept);
+  }
+  return v;
+}
+
 /** Largest "Generate more" batch per kind. Emoji puzzles come 10 per AI call; topics and dares one per call. */
-export const LIBRARY_BATCH_MAX: Record<LibraryKind, number> = { "emoji-puzzle": 50, "chor-kaun-topic": 5, dare: 5, "kbc-question": 10 };
+export const LIBRARY_BATCH_MAX: Record<LibraryKind, number> = { "emoji-puzzle": 50, "chor-kaun-topic": 5, dare: 5, "kbc-question": 10, "bottle-prompts": 60 };
 
 /**
  * "Generate more": asks the AI services for a batch and adds it to the content library. Duplicates
@@ -153,11 +169,12 @@ async function libraryGenerate(body: Record<string, unknown>, ctx: ActionContext
   if (!theme) return fail(400, "bad_theme");
   const level: Level = body.level === "kids" || body.level === "adults" ? body.level : "family";
   const audience = body.audience === "mixed" ? "mixed" : "family";
+  const tone: BottleTone = isBottleTone(body.tone) ? body.tone : "family";
   const flags = await flagMap();
   if (flags["suggest"] === false) return fail(409, "suggest_switched_off");
   const allow = (name: string) => flags[`llm:${name}`] !== false;
-  const useTmdb = isMovieTheme(theme) && tmdbConfigured() && kind !== "dare" && kind !== "kbc-question";
-  await auditOrThrow({ actor: ctx.actor, action: "library.generate", target: kind, details: { count, level, audience, theme, tmdb: useTmdb }, ip: ctx.ip });
+  const useTmdb = isMovieTheme(theme) && tmdbConfigured() && kind !== "dare" && kind !== "kbc-question" && kind !== "bottle-prompts";
+  await auditOrThrow({ actor: ctx.actor, action: "library.generate", target: kind, details: { count, level, audience, theme, tmdb: useTmdb, ...(kind === "bottle-prompts" ? { tone } : {}) }, ip: ctx.ip });
   if (useTmdb) return movieGenerate(kind, count, theme, allow);
   if (kind === "kbc-question") return newsGenerate(count, theme, allow);
 
@@ -178,9 +195,12 @@ async function libraryGenerate(body: Record<string, unknown>, ctx: ActionContext
         ? { level, count: n, avoid: made.slice(-40), theme, category }
         : kind === "dare"
           ? { audience, avoid: made.slice(-40), theme }
+          : kind === "bottle-prompts"
+            ? { tone, avoid: made.slice(-30).map((t) => t.toLowerCase().slice(0, 60)), theme }
           : { excludeTopicIds: [], avoid: made.slice(-40), theme };
     const accept = (raw: unknown): unknown | null => {
       if (kind === "emoji-puzzle") return screenInto(stats, raw, level, category, remaining);
+      if (kind === "bottle-prompts") return screenBottle(stats, raw, tone);
       stats.made += 1;
       const v = validateGeminiPayload(kind, raw);
       if (v == null) {

@@ -1,4 +1,4 @@
-// Content library SQL (migrations 0010 to 0012, applied after 0004 to 0009) against an in-process Postgres.
+// Content library SQL (migrations 0010 to 0013, applied after 0004 to 0009) against an in-process Postgres.
 // Simulates the parts of Supabase the migrations rely on (auth.users, anon / authenticated /
 // service_role and Supabase's default privileges). Not a substitute for testing on the real project.
 // Run after: npm i --no-save @electric-sql/pglite   (or set PGLITE_DIR to the package folder)
@@ -61,7 +61,7 @@ await db.exec(`
 const FILES = [
   "0004_admin_and_events.sql", "0005_admin_stats_and_retention.sql", "0006_lasting_room_counts_and_safe_stats.sql",
   "0007_power_admin.sql", "0008_review_followups.sql", "0009_session_revocation_and_atomic_lockout.sql", "0010_content_library.sql",
-  "0011_library_theme.sql", "0012_kbc_news.sql",
+  "0011_library_theme.sql", "0012_kbc_news.sql", "0013_spin_bottle_library.sql",
 ];
 let migrationsOk = true;
 for (const f of FILES) {
@@ -72,7 +72,7 @@ for (const f of FILES) {
     check("MIG", `migration ${f} applies cleanly`, false, e.message.split("\n")[0]);
   }
 }
-check("MIG-1", "migrations 0004 to 0012 apply cleanly in order", migrationsOk);
+check("MIG-1", "migrations 0004 to 0013 apply cleanly in order", migrationsOk);
 const rerun = await db.exec(migration("0010_content_library.sql")).then(() => null, (e) => e.message.split("\n")[0]);
 check("MIG-2", "0010 can be run a second time", rerun === null, rerun ?? "");
 const rerun11 = await db.exec(migration("0011_library_theme.sql")).then(() => null, (e) => e.message.split("\n")[0]);
@@ -80,6 +80,8 @@ check("MIG-3", "0011 can be run a second time (after 0010 again too)", rerun11 =
 // Re-running 0010/0011 put back their versions of library_pick/library_add; 0012 must come last again.
 const rerun12 = await db.exec(migration("0012_kbc_news.sql")).then(() => null, (e) => e.message.split("\n")[0]);
 check("MIG-4", "0012 can be run a second time", rerun12 === null, rerun12 ?? "");
+const rerun13 = await db.exec(migration("0013_spin_bottle_library.sql")).then(() => null, (e) => e.message.split("\n")[0]);
+check("MIG-5", "0013 can be run a second time (after 0012 again)", rerun13 === null, rerun13 ?? "");
 
 const asRole = async (role, sql, params) => {
   try {
@@ -304,6 +306,23 @@ const tsFn = await svc(`select has_function_privilege('anon', 'public.library_ts
 check("NEWS-8", "anon and authenticated can't call the date helper", tsFn.ok && !tsFn.rows[0].a && !tsFn.rows[0].b, JSON.stringify(tsFn.rows));
 const bad = await svc(`insert into content_library (kind, game_id, text_key, text_norm, data, source) values ('kbc', 'x', 'k2', 'k2', '{}', 'manual')`);
 check("NEWS-9", "kinds other than the four known ones are still refused", !bad.ok && /content_library_kind_check/.test(bad.error), bad.error ?? "inserted");
+
+// --- Spin the Bottle prompts (0013) -------------------------------------------------------------------
+const bottle = (tone, n, kind = "truth") => Array.from({ length: n }, (_, i) => ({ category: tone, key: `${tone} ${kind} prompt number ${i}`, data: { kind, text: `${tone} ${kind} prompt number ${i}` } }));
+const bAdd = await svc(`select library_add('bottle-prompts', 'spin-bottle', 'en', 'llm:groq', $1::jsonb, null, null, false) as n`, [JSON.stringify([...bottle("college", 10), ...bottle("college", 6, "dare"), ...bottle("kids", 5)])]);
+check("BOT-1", "the library accepts Spin the Bottle prompts (21 stored)", bAdd.ok && bAdd.rows[0].n === 21, bAdd.error ?? JSON.stringify(bAdd.rows));
+const bp1 = await svc(`select category, data from library_pick(null, 'guest_bottlebottle000001', 'bottle-prompts', array['college'], 'en', 24, 12)`);
+check("BOT-2", "a pick serves only the asked mood (16 college, no kids)", bp1.ok && bp1.rows.length === 16 && bp1.rows.every((r) => r.category === "college"), bp1.error ?? JSON.stringify(bp1.rows.map((r) => r.category)));
+const bp2 = await svc(`select count(*)::int n from library_pick(null, 'guest_bottlebottle000001', 'bottle-prompts', array['college'], 'en', 24, 12)`);
+check("BOT-3", "the same host gets nothing more once they've seen them (so the AI is asked)", bp2.ok && bp2.rows[0].n === 0, bp2.error ?? JSON.stringify(bp2.rows));
+const bp3 = await svc(`select count(*)::int n from library_pick(null, 'guest_bottlebottle000002', 'bottle-prompts', array['kids'], 'en', 24, 12)`);
+check("BOT-4", "fewer unseen prompts than the minimum (5 < 12) serves nothing", bp3.ok && bp3.rows[0].n === 0, bp3.error ?? JSON.stringify(bp3.rows));
+const bp4 = await svc(`select count(*)::int n from library_pick(null, 'guest_bottlebottle000003', 'bottle-prompts', array['college'], 'en', 24, 12)`);
+check("BOT-5", "another host is still served the college prompts", bp4.ok && bp4.rows[0].n === 16, bp4.error ?? JSON.stringify(bp4.rows));
+const bGame = (await svc(`select distinct game_id from content_library where kind = 'bottle-prompts'`)).rows.map((r) => r.game_id);
+check("BOT-6", "the prompts are recorded under the spin-bottle game", bGame.length === 1 && bGame[0] === "spin-bottle", JSON.stringify(bGame));
+const bAnon = await asRole("anon", `select count(*) from library_pick(null, 'guest_bottlebottle000004', 'bottle-prompts', array['college'], 'en', 24, 1)`);
+check("BOT-7", "browsers (anon) still can't pick from the library", !bAnon.ok, "anon pick worked");
 
 // --- Account deletion ---------------------------------------------------------------------------------
 await db.exec(`delete from auth.users where id = '${hostB}'`);

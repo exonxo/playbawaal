@@ -15,6 +15,7 @@ import { SUGGEST_KINDS, type SuggestKind } from "@/lib/suggest/types";
 import { validateGeminiPayload } from "@/lib/suggest/validate";
 import type { Level } from "@/lib/types";
 import { GAMES } from "@/games/catalog";
+import { isBottleTone } from "@/content/spin-bottle";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,6 +52,8 @@ function cleanContext(kind: SuggestKind, raw: Record<string, unknown>): Record<s
     }
     case "dare":
       return { audience: raw.audience === "mixed" ? "mixed" : "family", avoid };
+    case "bottle-prompts":
+      return { tone: isBottleTone(raw.tone) ? raw.tone : "family", avoid };
     case "kbc-question":
       return { level: LEVELS.includes(raw.level as string) ? raw.level : "family", count: int(raw.count, 1, 10, 5), avoid };
     default:
@@ -143,7 +146,7 @@ export async function POST(req: Request) {
 
   const prompt = buildPrompt(kind, context);
   const accept = (raw: unknown) => {
-    const validated = validateGeminiPayload(kind, raw, contextCount, playerCount, emojiLevel);
+    const validated = validateGeminiPayload(kind, raw, contextCount, playerCount, emojiLevel, context.tone);
     return validated == null ? null : notRepeated(kind, validated, avoid);
   };
 
@@ -169,9 +172,10 @@ export async function POST(req: Request) {
     logLater("api_error", { route: "suggest", status: 500 });
   }
 
-  // No AI answer: a smaller set from the library (at least 3 emoji puzzles) beats the fixed lists.
-  if (useLibrary && isLibraryKind(kind) && kind === "emoji-puzzle") {
-    const partial = await pickFromLibrary(kind, context, viewer, { min: 3 });
+  // No AI answer: a smaller set from the library (at least 3 emoji puzzles, or 6 bottle prompts)
+  // beats the fixed lists.
+  if (useLibrary && isLibraryKind(kind) && (kind === "emoji-puzzle" || kind === "bottle-prompts")) {
+    const partial = await pickFromLibrary(kind, context, viewer, { min: kind === "emoji-puzzle" ? 3 : 6 });
     if (partial != null) {
       logLater("suggest", { suggest_kind: kind, provider: "library", fallback: true, ms: 0, reason: "all_providers_failed" });
       return ok(partial, true);
