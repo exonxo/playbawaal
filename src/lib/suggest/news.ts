@@ -15,6 +15,7 @@
  */
 import { getServiceClient } from "../supabase/service";
 import { runChain } from "./chain";
+import { nearDuplicate } from "./dedupe";
 import { normText, type LibraryItem } from "./library";
 import { validateKbcQuestion, type KbcLibraryQuestion } from "./validate";
 
@@ -173,9 +174,11 @@ export function prefilter(articles: Article[], used: Set<string>, now = Date.now
   const kept: Article[] = [];
   let blocked = 0;
   let repeats = 0;
+  const usedList = [...used];
   for (const a of articles) {
     const key = normText(a.headline);
-    if (!key || seen.has(key) || used.has(key)) {
+    // The same story from two outlets is worded differently: near-duplicates count as repeats (issue #29).
+    if (!key || seen.has(key) || used.has(key) || [...seen].some((k) => nearDuplicate(key, k, 0.6)) || usedList.some((k) => nearDuplicate(key, k, 0.6))) {
       repeats++;
       continue;
     }
@@ -247,6 +250,8 @@ export function generationPrompt(batch: Article[], theme?: string): string {
     "For each item decide keep true or false. Keep it only if ALL of these hold:",
     "- family-friendly, and about India or Indians (an Indian person, team, place, film or achievement), and of interest across India;",
     "- not a local civic matter, a company's sales, targets or results, celebrity homes, gossip or lifestyle, or a product launch;",
+    "- of national interest: a family in another state would have heard of it. Skip stories about one city, district or state's own affairs (local roads, municipal decisions, a state board's notice) unless the whole country followed them;",
+    "- if two items are the same story, keep only the clearer one;",
     "- a well-informed family member could know or reasonably guess the answer;",
     "- not about crime, violence, accidents, death, disasters, illness, or divisive politics (parties, elections, religion, caste, conflicts).",
     focus,

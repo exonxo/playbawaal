@@ -18,7 +18,7 @@ import { itemsFrom, normText, saveToLibrary, type LibraryItem } from "./library"
 import { chorMovieShare, libraryTexts, movieChorTopic, movieItems, moviePuzzles, newStats, pickMovies } from "./movies";
 import { buildPrompt } from "./prompts";
 import { tmdbConfigured } from "./tmdb";
-import { validateGeminiPayload } from "./validate";
+import { screenEmojiPuzzles, validateGeminiPayload } from "./validate";
 import { makeNewsQuestions, saveNews, type NewsStats } from "./news";
 import { BOTTLE_TONES } from "@/content/spin-bottle";
 
@@ -37,6 +37,10 @@ const CHOR_THEMES = ["Indian food", "Festivals", "Places in India", "Cricket", "
 const DARE_THEMES = ["Family party", "Diwali night", "Wedding season", "Road trip", "Cricket match night", "Monsoon evening"];
 const BOTTLE_THEMES = ["Hostel and school life", "Weddings and family functions", "Monday mornings", "Bollywood", "Cricket", "Road trips", "Festivals at home", "Phones and group chats"];
 const TEMPERATURE = 0.7;
+/** Non-movie emoji categories, two a week in turn, so the library isn't all movies (issue #29). */
+const EMOJI_MIX = ["Food", "Place", "Festival", "Song", "Person", "Thing", "Sport", "Phrase", "Cartoon"] as const;
+const EMOJI_MIX_PER_RUN = 2;
+const EMOJI_MIX_COUNT = 8;
 
 export interface TopupResult {
   ok: boolean;
@@ -48,6 +52,8 @@ export interface TopupResult {
   rejected: number;
   stored: number;
   emoji: { movies: number; made: number; kept: number; rejected: number; stored: number; reasons: Record<string, number> };
+  /** Non-movie emoji puzzles this run, by category. */
+  emojiMix?: Record<string, { kept: number; stored: number }>;
   chor: { movie: number; ai: number; kept: number; stored: number };
   dare: { kept: number; stored: number };
   /** Spin the Bottle: one AI batch per run for one mood, a different mood each week. */
@@ -183,6 +189,34 @@ export async function runTopup(trigger: "cron" | "admin", budgetMs = 45_000): Pr
 
   // 3. Emoji puzzles for movies not yet in the library, most-rated first. The main job, so it goes
   // before news; it stops starting batches early enough to leave the news step its time.
+  // 3a. A mix of non-movie categories first (small batches), so the library isn't only movies.
+  res.emojiMix = {};
+  for (let i = 0; i < EMOJI_MIX_PER_RUN && left() > 20_000 + NEWS_RESERVE_MS; i++) {
+    const category = EMOJI_MIX[(week(start) * EMOJI_MIX_PER_RUN + i) % EMOJI_MIX.length];
+    const avoid = [...(await libraryTexts("emoji-puzzle"))].slice(-40);
+    const mixStats = { made: 0, rejected: 0, reasons: {} as Record<string, number> };
+    const r = await runChain(
+      "emoji-puzzle",
+      buildPrompt("emoji-puzzle", { level: "family", count: EMOJI_MIX_COUNT, avoid, category }),
+      (raw) => {
+        const sc = screenEmojiPuzzles(raw, { level: "family", category, limit: EMOJI_MIX_COUNT });
+        mixStats.made += sc.made;
+        mixStats.rejected += sc.rejected;
+        return sc.kept.length ? sc.kept : null;
+      },
+      { allow, temperature: TEMPERATURE },
+    );
+    if (!r) {
+      res.emojiMix[category] = { kept: 0, stored: 0 };
+      continue;
+    }
+    addProviders({ [r.provider]: 1 });
+    const items = itemsFrom("emoji-puzzle", r.data, {});
+    const stored = await saveToLibrary("emoji-puzzle", items, `cron:llm:${r.provider}`);
+    res.emojiMix[category] = { kept: items.length, stored: stored ?? 0 };
+    res.emoji.made += mixStats.made;
+    res.emoji.rejected += mixStats.rejected;
+  }
   const movies = await pickMovies(ALL_LANGS, TOPUP_MOVIES, await libraryTexts("emoji-puzzle"));
   res.emoji.movies = movies.length;
   if (movies.length) {
@@ -190,7 +224,7 @@ export async function runTopup(trigger: "cron" | "admin", budgetMs = 45_000): Pr
     const r = await moviePuzzles(movies, { allow, temperature: TEMPERATURE, deadline: deadline - 8_000 - NEWS_RESERVE_MS });
     addProviders(r.providers);
     const stored = r.puzzles.length ? await saveToLibrary("emoji-puzzle", movieItems(r.puzzles), "cron:tmdb:llm") : 0;
-    res.emoji = { movies: movies.length, made: r.stats.made, kept: r.puzzles.length, rejected: r.stats.rejected, reasons: r.stats.reasons, stored: stored ?? 0 };
+    res.emoji = { movies: movies.length, made: res.emoji.made + r.stats.made, kept: r.puzzles.length, rejected: res.emoji.rejected + r.stats.rejected, reasons: r.stats.reasons, stored: stored ?? 0 };
   }
   // 4. KBC news questions: fetched only here and from the admin button, never during a game. A write
   // call and a check call (up to 8 s each) can follow the last start, so starts stop 16 s before the end.

@@ -5,6 +5,7 @@ import { validateGeminiPayload } from "./validate";
 import { isBottleTone, type BottleTone } from "@/content/spin-bottle";
 import type { BottleBatch } from "./bottle";
 import { applyRules, loadRules } from "./rules";
+import { dropNearDuplicates, NEAR_DUP_KINDS } from "./dedupe";
 import { applyBottlePolicy, offFor } from "./policy-core";
 import { loadBottlePolicy } from "./policy";
 
@@ -177,6 +178,18 @@ export async function pickFromLibrary(
 
 let groupPickMissing = false;
 
+/** Normalised texts already in the library for a kind (most recent 3000), for the near-duplicate check. */
+async function recentNorms(kind: LibraryKind): Promise<string[]> {
+  const db = getServiceClient();
+  if (!db) return [];
+  try {
+    const { data } = await db.from("content_library").select("text_norm").eq("kind", kind).order("id", { ascending: false }).limit(3000);
+    return ((data ?? []) as { text_norm: string }[]).map((r) => r.text_norm);
+  } catch {
+    return [];
+  }
+}
+
 /** Shapes served rows, then applies the admin's rules and strictness settings. */
 async function screenServed(kind: LibraryKind, rows: { data: unknown }[], context: Record<string, unknown>): Promise<unknown | null> {
   try {
@@ -251,6 +264,12 @@ export async function saveToLibrary(
 ): Promise<number | null> {
   const db = getServiceClient();
   if (!db || !items.length) return db ? 0 : null;
+  // Sentences: skip rewordings of what's already in the library (exact copies are skipped by the database).
+  if (NEAR_DUP_KINDS.has(kind)) {
+    const existing = await recentNorms(kind);
+    items = dropNearDuplicates(items, existing, (i) => normText(i.key)).kept;
+    if (!items.length) return 0;
+  }
   const cleanSource = source.toLowerCase().replace(/[^a-z0-9:_.-]/g, "").slice(0, 64) || "llm:unknown";
   try {
     let stored = 0;

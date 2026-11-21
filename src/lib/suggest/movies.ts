@@ -7,7 +7,7 @@ import { getServiceClient } from "../supabase/service";
 import { runChain } from "./chain";
 import { normText, type LibraryItem } from "./library";
 import { buildPrompt } from "./prompts";
-import { cinemaName, popularIndianMovies, resolveTitles, type TmdbMovie } from "./tmdb";
+import { cinemaName, popularIndianMovies, resolveTitles, type TmdbMovie, indiaCertification, familyCertificate } from "./tmdb";
 import { screenEmojiPuzzles, validateChorTopic } from "./validate";
 
 /** Share of Chor Kaun topics made from movie titles in the weekly top-up. CHOR_MOVIE_SHARE overrides (0–1). */
@@ -119,6 +119,18 @@ export async function moviePuzzles(
     providers[result.provider] = (providers[result.provider] ?? 0) + 1;
     puzzles.push(...(result.data as EmojiPuzzle[]));
   }
+  // Films with an adults-only certificate (A, UA 16+) become "adults" puzzles, never "family" (issue #29).
+  await Promise.all(
+    puzzles.map(async (p) => {
+      const id = (p as EmojiPuzzle & { tmdbId?: number }).tmdbId;
+      if (typeof id !== "number") return;
+      const cert = await indiaCertification(id);
+      if (!familyCertificate(cert)) {
+        p.level = "adults";
+        stats.reasons.relabelled_adults = (stats.reasons.relabelled_adults ?? 0) + 1;
+      }
+    }),
+  );
   return { puzzles, stats, providers, calls };
 }
 
