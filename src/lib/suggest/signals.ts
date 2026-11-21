@@ -26,15 +26,21 @@ export interface SignalItem {
   event: SignalEvent;
 }
 
-/** Cleans what a browser sent: known events only, short text, at most MAX_EVENTS. */
+/** Cleans what a browser sent: known events only, short text, each event once per card, at most MAX_EVENTS. */
 export function cleanEvents(raw: unknown): SignalItem[] {
   if (!Array.isArray(raw)) return [];
   const out: SignalItem[] = [];
+  const seen = new Set<string>();
   for (const e of raw.slice(0, MAX_EVENTS)) {
     if (!e || typeof e !== "object") continue;
     const key = typeof (e as { key?: unknown }).key === "string" ? (e as { key: string }).key.replace(/\s+/g, " ").trim().slice(0, 300) : "";
     const event = (e as { event?: unknown }).event;
     if (key.length < 2 || !(SIGNAL_EVENTS as readonly unknown[]).includes(event)) continue;
+    // One batch counts each event once per card, so a single request can't push an item over the
+    // switch-off line on its own.
+    const id = `${event}|${key.toLowerCase()}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
     out.push({ key, event: event as SignalEvent });
   }
   return out;

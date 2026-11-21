@@ -106,9 +106,24 @@ export async function reportResolve(body: Record<string, unknown>, ctx: ActionCo
   const d = db();
   const r = await d.rpc("library_set_off", { p_kind: kind, p_norms: [norm], p_reason: decision === "remove" ? "admin" : null, p_off: decision === "remove" });
   if (r.error) return fail(500, "update_failed");
+  let changed = Number(r.data) || 0;
+  if (decision === "remove") {
+    // An item the engine already switched off keeps its automatic reason above, so "undo" would still
+    // offer it. Mark it as the admin's decision instead, so it stays off for good.
+    const m = await d
+      .from("content_library")
+      .update({ off_reason: "admin", off_at: new Date().toISOString() })
+      .eq("kind", kind)
+      .eq("text_norm", norm)
+      .eq("active", false)
+      .in("off_reason", ["reports", "signals"])
+      .select("id");
+    if (m.error) return fail(500, "update_failed");
+    changed += m.data?.length ?? 0;
+  }
   await d.from("content_reports").delete().eq("kind", kind).eq("category", category).eq("text_norm", norm);
   await d.from("content_signals").update({ reported: 0 }).eq("kind", kind).eq("category", category).eq("text_norm", norm);
-  return ok({ changed: Number(r.data) || 0, decision });
+  return ok({ changed, decision });
 }
 
 /** Switches back on items the engine switched off automatically (reason reports or signals). */

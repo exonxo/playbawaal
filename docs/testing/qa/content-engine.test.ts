@@ -144,6 +144,10 @@ function toCard(s: State, kind: "truth" | "dare", now: number): State {
     assert.ok(out.length <= 100);
     assert.equal(cleanEvents("nope").length, 0);
   });
+  await check("SIG-1b", "one batch counts each event once per card", () => {
+    const out = cleanEvents([...Array.from({ length: 30 }, () => ({ key: "Sing a song", event: "flipped" })), { key: "sing  a song", event: "shown" }, { key: "Sing a Song", event: "shown" }]);
+    assert.equal(out.length, 2);
+  });
   await check("SIG-2", "reports from enough rooms switch an item off; so does a high flip-or-pass rate", () => {
     const d = retireDecisions([
       { text_norm: "a", shown: 3, done: 0, passed: 0, flipped: 0, reported_rooms: REPORT_ROOMS },
