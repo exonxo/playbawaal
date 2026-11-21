@@ -56,7 +56,11 @@ const KIDS_FAMILY: RegExp[] = [
   /\b(?:crush|date|dating|boyfriend|girlfriend|romantic|romance|love\s+life|married\s+to|propose|flirt\w*)\b/i,
   /\b(?:search\s+history|screen\s*time|last\s+(?:sent\s+)?text|gallery|screenshot)\b/i,
 ];
-const KIDS_ONLY: RegExp[] = [/\b(?:secret|embarrass\w*|scold\w*|lie|lied|cried|scary|scariest)\b/i];
+const KIDS_ONLY: RegExp[] = [
+  /\b(?:secret|embarrass\w*|scold\w*|lie|lied|cried|scary|scariest)\b/i,
+  // Grown-up settings: kids prompts are about home, school and play, not hostels or offices.
+  /\b(?:hostel|hostels|dorm|dorms|dormitory|college|office|boss|colleague\w*|client\w*|roommate\w*)\b/i,
+];
 
 const OFFICE: RegExp[] = [
   /\b(?:crush|dating\s+(?:someone|a\s+colleague)|office\s+romance|attracted|would\s+you\s+date|marry|boyfriend|girlfriend)\b/i,

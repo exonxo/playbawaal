@@ -10,7 +10,8 @@ export const THEME_CHIPS: { label: string; category?: string }[] = [
   { label: "Bollywood movies", category: "Movie" },
   { label: "Movies", category: "Movie" },
   { label: "Indian food", category: "Food" },
-  { label: "Cricket", category: "Sport" },
+  // No fixed category: cricket puzzles are mostly players (Person), and Sport means the name of a sport.
+  { label: "Cricket" },
   { label: "Festivals", category: "Festival" },
   { label: "Songs", category: "Song" },
   { label: "Places in India", category: "Place" },

@@ -287,11 +287,13 @@ function HostRoom({
   const endPartySheet = (
     <PaperSheet open={sheet === "endParty"} onClose={() => setSheet(null)} title="End the party for everyone?">
       <p className="text-p-body text-muted">All players will leave this room. They cannot join with this code again.</p>
-      <div className="mt-5 grid grid-cols-2 gap-3">
-        <PaperButton tone="paper" size="lg" onClick={() => setSheet(null)}>
+      {/* Two equal buttons side by side when both labels fit on one line; otherwise they stack full width
+          (never wrapped text). 10rem is "Keep party going" plus its padding: side by side from ~375px, stacked on narrower phones. */}
+      <div className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-3">
+        <PaperButton tone="paper" size="md" className="w-full whitespace-nowrap px-5 py-3" onClick={() => setSheet(null)}>
           Keep party going
         </PaperButton>
-        <BusyPaperButton tone="vermilion" size="lg" loading={endingParty} busyLabel="Ending party…" onClick={hostEndParty}>
+        <BusyPaperButton tone="vermilion" size="md" className="w-full whitespace-nowrap px-5 py-3" loading={endingParty} busyLabel="Ending party…" onClick={hostEndParty}>
           End party
         </BusyPaperButton>
       </div>

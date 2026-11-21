@@ -1,6 +1,6 @@
 "use client";
 import confetti from "canvas-confetti";
-import { Eye, Film, Lightbulb, MapPin, Music, Quote, Send, SkipForward, Sparkles, Trophy, Tv, UtensilsCrossed, type LucideIcon } from "lucide-react";
+import { Eye, Film, Lightbulb, MapPin, Music, Quote, Shapes, Send, SkipForward, Sparkles, Trophy, Tv, UserRound, UtensilsCrossed, type LucideIcon } from "lucide-react";
 import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "motion/react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { CountUp, PaperButton, PaperSheet, Sticker } from "@/components/paper/Paper";
@@ -10,6 +10,7 @@ import { celebrate } from "@/lib/celebrate";
 import { playerColor } from "@/lib/colors";
 import { useOnChange, useSfx } from "@/lib/roomAudio";
 import type { PhoneProps, Player } from "@/lib/types";
+import { EMOJI_ASK } from "@/lib/suggest/emoji-category";
 import { POINTS, type Pub } from "./shared";
 
 /** Emoji Picture's paper colour: sky blue. */
@@ -26,19 +27,12 @@ const CATEGORY_ICON: Record<string, LucideIcon> = {
   Cartoon: Tv,
   Sport: Trophy,
   Song: Music,
+  Person: UserRound,
+  Thing: Shapes,
 };
 
-/** What to ask for, per category. */
-const ASK: Record<string, string> = {
-  Movie: "Kaunsi film?",
-  Food: "Kya khana hai?",
-  Place: "Kaunsi jagah?",
-  Festival: "Kaunsa tyohaar?",
-  Phrase: "Kaunsi kahawat?",
-  Cartoon: "Kaunsa cartoon?",
-  Sport: "Kaunsa khel?",
-  Song: "Kaunsa gaana?",
-};
+/** What to ask for, per category (shared with the server's category check). */
+const ASK: Record<string, string> = EMOJI_ASK;
 
 function ranked(players: Player[], scores: Record<string, number>) {
   return players

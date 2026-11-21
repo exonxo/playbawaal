@@ -1,6 +1,6 @@
 "use client";
 /** Emoji Picture on the big screen: the flash card, the clock, who has solved it, points. The answer shows only on the reveal. */
-import { Eye, Film, Lightbulb, MapPin, Music, Quote, SkipForward, Sparkles, Trophy, Tv, UtensilsCrossed, type LucideIcon } from "lucide-react";
+import { Eye, Film, Lightbulb, MapPin, Music, Quote, Shapes, SkipForward, Sparkles, Trophy, Tv, UserRound, UtensilsCrossed, type LucideIcon } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { PaperButton, Sticker } from "@/components/paper/Paper";
 import { dur, ease, spring } from "@/components/paper/motion";
@@ -21,6 +21,8 @@ const CATEGORY_ICON: Record<string, LucideIcon> = {
   Cartoon: Tv,
   Sport: Trophy,
   Song: Music,
+  Person: UserRound,
+  Thing: Shapes,
 };
 
 function emojiSize(emojis: string) {

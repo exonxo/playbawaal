@@ -1,8 +1,9 @@
 "use client";
 import { useParams } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SuggestPaperButton } from "@/components/suggest/SuggestPaperButton";
 import { requestSuggest } from "@/lib/suggest/client";
+import { recall, remember } from "@/lib/suggest/memory";
 import { LevelPicker, NumberPicker } from "@/components/ui";
 import { EMOJI_PUZZLES, type EmojiPuzzle } from "@/content/emoji-picture";
 import { HOST_ID, type ControllerProps, type GameModule, type Level } from "@/lib/types";
@@ -38,6 +39,16 @@ function pickPuzzles(level: Level, count: number, extra?: EmojiPuzzle[]): EmojiP
   if (extra && extra.length >= Math.min(3, count)) return extra.slice(0, count);
   const levels: Level[] = level === "kids" ? ["kids"] : level === "family" ? ["kids", "family"] : ["family", "adults"];
   return shuffle(EMOJI_PUZZLES.filter((p) => levels.includes(p.level))).slice(0, count);
+}
+
+/** Fresh puzzles plus built-in ones this device hasn't shown lately, shuffled into one round. */
+function mixRound(fresh: EmojiPuzzle[], level: Level, count: number): EmojiPuzzle[] {
+  const used = new Set([...recall("emoji-puzzle"), ...fresh.map((p) => p.answer)].map((a) => a.toLowerCase()));
+  const builtIn = pickPuzzles(level, EMOJI_PUZZLES.length);
+  const unseen = builtIn.filter((p) => !used.has(p.answer.toLowerCase()));
+  const taken = new Set(fresh.map((p) => p.answer.toLowerCase()));
+  const rest = [...unseen, ...builtIn.filter((p) => !unseen.includes(p))].filter((p) => !taken.has(p.answer.toLowerCase()));
+  return shuffle([...fresh, ...rest.slice(0, Math.max(0, count - fresh.length))]).slice(0, count);
 }
 
 function startQuestion(s: State, idx: number, now: number): State {
@@ -80,6 +91,29 @@ function OptionsForm({ value, onChange }: { value: Options; onChange: (o: Option
       setLoading(false);
     }
   };
+
+  // Without this, a game started straight away used only the built-in deck, so every new account saw
+  // the same old cards. Now, when the host opens the options, about half the round is fetched fresh
+  // (the content library first, then the AI) and the rest is built-in cards this device hasn't shown
+  // lately. Quietly: nothing changes if it fails, and "New puzzles" still fetches a full fresh round.
+  const autoKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (!roomCode || value.extraPuzzles) return;
+    const key = `${value.level}|${value.count}`;
+    if (autoKey.current === key) return;
+    autoKey.current = key;
+    const snap = { level: value.level, count: value.count };
+    const fresh = Math.max(3, Math.ceil(snap.count / 2));
+    void requestSuggest<EmojiPuzzle[]>("emoji-puzzle", { level: snap.level, count: fresh }, roomCode)
+      .then(({ data, fallback }) => {
+        const current = valueRef.current;
+        if (fallback || current.extraPuzzles || current.level !== snap.level || current.count !== snap.count) return;
+        const mixed = mixRound(data.slice(0, fresh), snap.level, snap.count);
+        remember("emoji-puzzle", mixed.map((p) => p.answer));
+        onChange({ ...current, extraPuzzles: mixed });
+      })
+      .catch(() => {});
+  }, [roomCode, value.level, value.count, value.extraPuzzles, onChange]);
 
   return (
     <div className="space-y-4">

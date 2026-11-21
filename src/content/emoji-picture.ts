@@ -1,8 +1,10 @@
 import type { Level } from "@/lib/types";
+import type { EmojiCategory } from "@/lib/suggest/emoji-category";
 
 export interface EmojiPuzzle {
   emojis: string;
-  category: "Movie" | "Food" | "Place" | "Festival" | "Phrase" | "Cartoon" | "Sport" | "Song";
+  /** Must match the answer: the game asks "Kaunsa khel?" for Sport, "Kaun hai yeh?" for Person, and so on. */
+  category: EmojiCategory;
   answer: string;
   /** Extra accepted spellings. */
   alt?: string[];
@@ -20,7 +22,7 @@ export const EMOJI_PUZZLES: EmojiPuzzle[] = [
   { emojis: "🕷️🧑", category: "Movie", answer: "Spider-Man", alt: ["Spiderman"], hint: "Friendly neighbourhood hero", level: "kids" },
   { emojis: "🧒💪🍬🏡", category: "Cartoon", answer: "Chhota Bheem", alt: ["Chota Bheem", "Chhota Bhim"], hint: "Dholakpur's strongest kid, loves laddoos", level: "kids" },
   { emojis: "🧔🍔🧑‍🦰", category: "Cartoon", answer: "Motu Patlu", hint: "Samosa-loving best friends from Furfuri Nagar", level: "kids" },
-  { emojis: "🐒🙏💪", category: "Cartoon", answer: "Hanuman", alt: ["Bal Hanuman"], hint: "Flew to Lanka", level: "kids" },
+  { emojis: "🐒🙏💪", category: "Person", answer: "Hanuman", alt: ["Bal Hanuman"], hint: "Flew to Lanka", level: "kids" },
   { emojis: "🐘🙏🍬", category: "Festival", answer: "Ganesh Chaturthi", alt: ["Ganesh Chaturthi", "Ganpati", "Ganeshotsav"], hint: "Ganpati Bappa Morya!", level: "kids" },
   { emojis: "🪔🎆🍬", category: "Festival", answer: "Diwali", alt: ["Deepavali"], hint: "Festival of lights", level: "kids" },
   { emojis: "🎨💦🌈", category: "Festival", answer: "Holi", hint: "Festival of colours", level: "kids" },
@@ -34,10 +36,10 @@ export const EMOJI_PUZZLES: EmojiPuzzle[] = [
   { emojis: "🟡🍬⚪", category: "Food", answer: "Laddoo", alt: ["Ladoo", "Laddu", "Ladu"], hint: "Round sweet", level: "kids" },
   { emojis: "🍌🥛", category: "Food", answer: "Banana Shake", alt: ["Banana milkshake", "Banana smoothie"], hint: "A cold drink", level: "kids" },
   { emojis: "🥭🥛", category: "Food", answer: "Mango Lassi", alt: ["Mango shake", "Aam lassi"], hint: "Punjabi summer drink", level: "kids" },
-  { emojis: "🍿🎬", category: "Phrase", answer: "Movie Night", alt: ["Movie time", "Cinema"], hint: "What you do on Friday", level: "kids" },
-  { emojis: "🏏🏆🇮🇳", category: "Sport", answer: "Cricket World Cup", alt: ["World Cup", "Cricket"], hint: "1983, 2011…", level: "kids" },
-  { emojis: "🐯🌳🇮🇳", category: "Phrase", answer: "Tiger", alt: ["Bengal Tiger", "National Animal"], hint: "India's national animal", level: "kids" },
-  { emojis: "🦚🇮🇳", category: "Phrase", answer: "Peacock", alt: ["National Bird", "Mor"], hint: "India's national bird", level: "kids" },
+  { emojis: "🍿🎬", category: "Thing", answer: "Movie Night", alt: ["Movie time", "Cinema"], hint: "What you do on Friday", level: "kids" },
+  { emojis: "🏏🏆🇮🇳", category: "Sport", answer: "Cricket", alt: ["Cricket World Cup"], hint: "India lifted the World Cup in 1983 and 2011", level: "kids" },
+  { emojis: "🐯🌳🇮🇳", category: "Thing", answer: "Tiger", alt: ["Bengal Tiger", "National Animal"], hint: "India's national animal", level: "kids" },
+  { emojis: "🦚🇮🇳", category: "Thing", answer: "Peacock", alt: ["National Bird", "Mor"], hint: "India's national bird", level: "kids" },
   { emojis: "🧙‍♂️👓⚡", category: "Movie", answer: "Harry Potter", hint: "The boy who lived", level: "kids" },
   { emojis: "🌊👧🏝️", category: "Movie", answer: "Moana", hint: "Ocean chose her", level: "kids" },
   { emojis: "🐭👨‍🍳", category: "Movie", answer: "Ratatouille", hint: "A rat who cooks in Paris", level: "kids" },
@@ -78,9 +80,9 @@ export const EMOJI_PUZZLES: EmojiPuzzle[] = [
   { emojis: "🛶🌴💧", category: "Place", answer: "Kerala", alt: ["Alleppey", "Backwaters"], hint: "God's own country", level: "family" },
   { emojis: "⛰️🙏🛕❄️", category: "Place", answer: "Kedarnath", alt: ["Badrinath", "Amarnath", "Vaishno Devi"], hint: "Char Dham temple high in the Himalayas", level: "family" },
   { emojis: "🍵☕⛰️🚂", category: "Place", answer: "Darjeeling", hint: "Toy train and tea gardens", level: "family" },
-  { emojis: "🦅🧑🏽‍🚀🚀🇮🇳", category: "Phrase", answer: "Chandrayaan", alt: ["ISRO", "Mangalyaan"], hint: "India's Moon mission", level: "family" },
-  { emojis: "💯🏏🙏", category: "Sport", answer: "Sachin Tendulkar", alt: ["Sachin"], hint: "God of cricket", level: "family" },
-  { emojis: "🥇🎯🇮🇳", category: "Sport", answer: "Neeraj Chopra", alt: ["Javelin"], hint: "Olympic javelin gold", level: "family" },
+  { emojis: "🦅🧑🏽‍🚀🚀🇮🇳", category: "Thing", answer: "Chandrayaan", alt: ["ISRO", "Mangalyaan"], hint: "India's Moon mission", level: "family" },
+  { emojis: "💯🏏🙏", category: "Person", answer: "Sachin Tendulkar", alt: ["Sachin"], hint: "God of cricket", level: "family" },
+  { emojis: "🥇🎯🇮🇳", category: "Person", answer: "Neeraj Chopra", alt: ["Neeraj"], hint: "Olympic javelin gold", level: "family" },
   // Adults
   { emojis: "👨‍⚕️🤝😇", category: "Movie", answer: "Munna Bhai MBBS", alt: ["Munnabhai MBBS", "Munna Bhai"], hint: "Jaadu ki jhappi", level: "adults" },
   { emojis: "🧳🍱📮", category: "Movie", answer: "The Lunchbox", alt: ["Lunchbox"], hint: "A mis-delivered dabba", level: "adults" },
@@ -102,9 +104,9 @@ export const EMOJI_PUZZLES: EmojiPuzzle[] = [
   { emojis: "🏜️🐪🏰", category: "Place", answer: "Jaisalmer", alt: ["Thar Desert", "Rajasthan"], hint: "The Golden City", level: "adults" },
   { emojis: "💻🌳🍺", category: "Place", answer: "Bengaluru", alt: ["Bangalore"], hint: "Garden city, IT city", level: "adults" },
   { emojis: "🦁🌳🇮🇳", category: "Place", answer: "Gir", alt: ["Gir Forest", "Gir National Park", "Sasan Gir"], hint: "Home of Asiatic lions", level: "adults" },
-  { emojis: "🧵🔄🇮🇳", category: "Phrase", answer: "Charkha", alt: ["Khadi", "Spinning wheel"], hint: "Gandhiji's spinning wheel", level: "adults" },
+  { emojis: "🧵🔄🇮🇳", category: "Thing", answer: "Charkha", alt: ["Khadi", "Spinning wheel"], hint: "Gandhiji's spinning wheel", level: "adults" },
   { emojis: "🐘🏠⬜", category: "Phrase", answer: "White Elephant", hint: "Costly but useless possession", level: "adults" },
-  { emojis: "🐍🪜", category: "Phrase", answer: "Snakes and Ladders", alt: ["Saanp Seedhi", "Moksha Patam"], hint: "Ancient Indian board game", level: "adults" },
+  { emojis: "🐍🪜", category: "Sport", answer: "Snakes and Ladders", alt: ["Saanp Seedhi", "Moksha Patam"], hint: "Ancient Indian board game", level: "adults" },
   { emojis: "🥒😎", category: "Phrase", answer: "Cool as a Cucumber", alt: ["Cool cucumber"], hint: "Very calm", level: "adults" },
   { emojis: "🐒🍹🫚", category: "Phrase", answer: "Bandar kya jaane adrak ka swaad", alt: ["Bandar kya jane adrak ka swad"], hint: "A Hindi proverb", level: "adults" },
 ];
