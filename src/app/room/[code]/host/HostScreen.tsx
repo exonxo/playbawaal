@@ -372,12 +372,14 @@ function HostRoom({
             ))}
           </div>
           <p className="mt-4 text-p-body text-muted">Share the invite, or tell everyone to open playbawaal.vercel.app and type this code.</p>
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <PaperButton size="lg" onClick={share}>
-              <Share2 className="h-5 w-5" /> Invite bhejo
+          {/* Same rule as the End-party sheet: two equal one-line buttons side by side when they fit,
+              otherwise stacked full width. Never wrapped text. 9.5rem fits "Invite bhejo" + icon + padding. */}
+          <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,9.5rem),1fr))] gap-3">
+            <PaperButton size="md" className="w-full whitespace-nowrap px-4 py-3" onClick={share}>
+              <Share2 className="h-5 w-5 shrink-0" /> Invite bhejo
             </PaperButton>
-            <PaperButton size="lg" tone="paper" onClick={() => setSheet("qr")}>
-              <QrCode className="h-5 w-5" /> QR code
+            <PaperButton size="md" tone="paper" className="w-full whitespace-nowrap px-4 py-3" onClick={() => setSheet("qr")}>
+              <QrCode className="h-5 w-5 shrink-0" /> QR code
             </PaperButton>
           </div>
         </>

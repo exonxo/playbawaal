@@ -5,6 +5,7 @@ import { approvedChorTopic, approvedEmojiPuzzles } from "@/lib/admin/bank";
 import { flagMap } from "@/lib/admin/flags";
 import { findOwnRoom } from "@/lib/rooms";
 import { getUser } from "@/lib/supabase/server";
+import { allow } from "@/lib/shared-limit";
 import { fallbackFor } from "@/lib/suggest/fallbacks";
 import { runChain } from "@/lib/suggest/chain";
 import { buildPrompt } from "@/lib/suggest/prompts";
@@ -105,7 +106,7 @@ export async function POST(req: Request) {
   const avoid = Array.isArray(context.avoid) ? (context.avoid as string[]) : [];
   const fallbackNow = () => fallbackFor(kind, { kind, ...context });
   const ip = clientIp(req);
-  if (!checkRateLimit(rateLimitKey(ip, roomCode))) {
+  if (!checkRateLimit(rateLimitKey(ip, roomCode)) || !(await allow(`suggest:${user.id}`, 60, 30))) {
     logLater("suggest", { suggest_kind: kind, provider: "none", fallback: true, ms: 0, reason: "rate_limited" });
     return ok(fallbackNow(), true);
   }

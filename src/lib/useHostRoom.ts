@@ -160,11 +160,61 @@ async function fetchKeyInfo(code: string): Promise<KeyInfo | null> {
   }
 }
 
-async function registerKey(code: string, key: string) {
+async function registerKey(code: string, key: string): Promise<boolean> {
   try {
-    await fetch(`/api/rooms/${code}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key }) });
-  } catch {}
+    const res = await fetch(`/api/rooms/${code}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key }) });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
+
+/** Saves the signing key, retrying a few times: phones on the real site trust only the key the server has. */
+async function registerKeyWithRetry(code: string, key: string, stop: () => boolean): Promise<boolean> {
+  for (let i = 0; i < 4 && !stop(); i++) {
+    if (await registerKey(code, key)) return true;
+    await new Promise((r) => setTimeout(r, 500 * 2 ** i));
+  }
+  return false;
+}
+
+/**
+ * A player's display name: no control, direction-override or invisible characters (which can make
+ * one name look like another, or flip the text around it), single spaces, at most 16 characters.
+ */
+export function cleanName(raw: string): string {
+  return raw
+    .normalize("NFC")
+    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 16)
+    .trim();
+}
+
+/** Ids that could reach Object.prototype through a plain object lookup are never accepted. */
+const RESERVED_IDS = new Set(["__proto__", "constructor", "prototype", "hasOwnProperty", "toString", "valueOf"]);
+
+/** Per-sender token bucket: at most `rate` messages a second on average, bursts up to `burst`. */
+export function makeLimiter(rate: number, burst: number, maxSenders = 500) {
+  const buckets = new Map<string, { tokens: number; at: number }>();
+  return (id: string, now = Date.now()): boolean => {
+    let b = buckets.get(id);
+    if (!b) {
+      if (buckets.size >= maxSenders) buckets.clear();
+      b = { tokens: burst, at: now };
+      buckets.set(id, b);
+    }
+    b.tokens = Math.min(burst, b.tokens + ((now - b.at) / 1000) * rate);
+    b.at = now;
+    if (b.tokens < 1) return false;
+    b.tokens -= 1;
+    return true;
+  };
+}
+
+/** Largest encrypted action a phone may send. Draw & Guess stroke batches are the biggest (a few KB). */
+export const MAX_ACTION_CT = 64_000;
 
 /**
  * Runs a room on the host's device. The host is also a player (`me`), so the
@@ -218,7 +268,7 @@ export function useHostRoom(code: string, me: Identity | null, ownerAuthId: stri
   const upsertPlayer = useCallback(
     (id: string, rawName: string, rawAvatar: string, pk?: string) => {
       const s = stateRef.current;
-      const name = rawName.trim().slice(0, 16);
+      const name = cleanName(rawName);
       if (!name) return;
       const taken = new Set(s.players.filter((p) => p.id !== id).map((p) => p.avatar));
       const all = AVATARS as readonly string[];
@@ -258,6 +308,9 @@ export function useHostRoom(code: string, me: Identity | null, ownerAuthId: stri
     const lastSyncAt = new Map<string, number>();
     const force = new Set<string>();
     const recentJoins: number[] = [];
+    // Drawing sends many small actions; 25 a second with bursts of 60 is far above normal play.
+    const actionLimit = makeLimiter(25, 60);
+    const syncLimit = makeLimiter(10, 20);
     const joinedAt = new Map<string, number>();
     const lastSeen = new Map<string, number>();
     const queue = serialQueue();
@@ -333,6 +386,7 @@ export function useHostRoom(code: string, me: Identity | null, ownerAuthId: stri
             together: s.together,
             view: playing ? mod.publicView(s.gameState) : null,
             hostNow: gameNow(),
+            at: Date.now(),
             epoch,
             seq: mySeq,
             hostEcdh: keys.ecdh.publicKey,
@@ -378,7 +432,8 @@ export function useHostRoom(code: string, me: Identity | null, ownerAuthId: stri
       if (disposed) return;
       const info = await fetchKeyInfo(code);
       demo = info?.demo ?? false;
-      if (!demo && info?.hostKey !== keys.sign.publicKey) await registerKey(code, keys.sign.publicKey);
+      // The key must be on the server before the first broadcast: phones trust nothing else.
+      if (!demo && info?.hostKey !== keys.sign.publicKey) await registerKeyWithRetry(code, keys.sign.publicKey, () => disposed);
       if (disposed) return;
       setRole("active");
       t.track(ownerId ? hostPresenceId(ownerId, tabId) : `host:${tabId}`);
@@ -430,19 +485,38 @@ export function useHostRoom(code: string, me: Identity | null, ownerAuthId: stri
       return false;
     };
 
-    const decide = () => {
-      if (roleRef.current !== "checking") return;
-      if (otherHost) setRole("blocked");
-      else void activate(false);
+    /**
+     * Presence can be faked by anyone with the room code, so "another device is hosting" is only
+     * believed when the server holds a different signing key for this room than this device's.
+     */
+    let deciding = false;
+    const decide = async () => {
+      if (roleRef.current !== "checking" || deciding) return;
+      deciding = true;
+      try {
+        if (otherHost) {
+          const info = await fetchKeyInfo(code);
+          const mine = await loadKeys(code, false);
+          const realOther = info?.demo ? true : !!info?.hostKey && info.hostKey !== mine.sign.publicKey;
+          if (roleRef.current !== "checking" || disposed) return;
+          if (realOther) {
+            setRole("blocked");
+            return;
+          }
+        }
+        void activate(false);
+      } finally {
+        deciding = false;
+      }
     };
-    const decideTimer = setTimeout(decide, 3500);
+    const decideTimer = setTimeout(() => void decide(), 3500);
 
     const offRoomPeek = t.on("room", () => {
       if (seenRemoteRoom) return;
       seenRemoteRoom = true;
       if (roleRef.current === "checking") {
         otherHost = presenceHostConflict(latestPresence);
-        if (presenceRounds >= 1) decide();
+        if (presenceRounds >= 1) void decide();
       }
     });
     let latestPresence: string[] = [];
@@ -451,7 +525,7 @@ export function useHostRoom(code: string, me: Identity | null, ownerAuthId: stri
       latestPresence = ids;
       otherHost = presenceHostConflict(ids);
       presenceRounds++;
-      if (roleRef.current === "checking" && presenceRounds >= 2) decide();
+      if (roleRef.current === "checking" && presenceRounds >= 2) void decide();
       reconcile(ids);
     });
 
@@ -497,6 +571,7 @@ export function useHostRoom(code: string, me: Identity | null, ownerAuthId: stri
       queue(async () => {
         if (roleRef.current !== "active" || !keys) return;
         if (!m || typeof m.id !== "string" || !m.id || m.id.length > 24 || typeof m.pk !== "string" || m.pk.length > 200 || !isSealed(m, 600)) return;
+        if (RESERVED_IDS.has(m.id)) return;
         const s = stateRef.current;
         if (s.phase === "closed") return;
         if (m.id === meRef.current?.id || m.id === HOST_ID || isBot(m.id) || s.kicked.includes(m.id)) return;
@@ -529,6 +604,8 @@ export function useHostRoom(code: string, me: Identity | null, ownerAuthId: stri
       if (roleRef.current !== "active") return;
       const id = typeof m?.id === "string" ? m.id.slice(0, 24) : "";
       const now = Date.now();
+      // All sync requests together: varying the id can't force a broadcast storm.
+      if (!syncLimit("all", now)) return;
       if (now - (lastSyncAt.get(id) ?? 0) < 1000) return;
       if (lastSyncAt.size > 500) lastSyncAt.clear();
       lastSyncAt.set(id, now);
@@ -538,9 +615,10 @@ export function useHostRoom(code: string, me: Identity | null, ownerAuthId: stri
     const offAction = t.on("action", (m: ActionEnvelope) =>
       queue(async () => {
         if (roleRef.current !== "active") return;
-        if (!m || typeof m.from !== "string" || !isSealed(m, 400_000)) return;
+        if (!m || typeof m.from !== "string" || !isSealed(m, MAX_ACTION_CT)) return;
         const s = stateRef.current;
         if (m.from === meRef.current?.id || !s.players.some((p) => p.id === m.from)) return;
+        if (!actionLimit(m.from)) return; // flooding: drop before the decrypt work
         const key = await sharedFor(m.from);
         if (!key) return;
         const body = await open<ActionBody>(key, m);

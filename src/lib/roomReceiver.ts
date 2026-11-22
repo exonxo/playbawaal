@@ -13,13 +13,25 @@ export async function fetchHostKey(code: string): Promise<string | null> {
   }
 }
 
+/** A first snapshot older than this (by the host's wall clock) is an old one being replayed. */
+export const MAX_FIRST_AGE_MS = 10 * 60_000;
+/** How often a phone asks the server again while it doesn't know the host's key yet. */
+const KEY_RETRY_MS = 1500;
+
 /**
  * Accepts only genuine, fresh host snapshots.
  * - With a key from the server, only that key is trusted (re-checked if the host changes device).
- * - Without one (demo mode / older database), the first key seen is trusted, and
- *   replaced only after that host has been silent for a while.
+ * - `strict` (the real site, with a database): a key seen only on the channel is NEVER trusted.
+ *   Until the server knows the host's key (the first second of a new room, or while the server
+ *   can't be reached), nothing is accepted and the server is asked again. Otherwise anyone with the
+ *   room code could pose as the host in that window.
+ * - Not strict (demo mode, no server): the first key seen is trusted, and replaced only after that
+ *   host has been silent for a while.
+ * - The first snapshot a phone accepts must be recent by the host's wall clock, so a snapshot
+ *   recorded in an earlier session can't be replayed to a phone that has just loaded.
  */
-export function createRoomReceiver(code: string) {
+export function createRoomReceiver(code: string, opts: { strict?: boolean } = {}) {
+  const strict = !!opts.strict;
   let key: string | null = null;
   let fromServer = false;
   let epoch = 0;
@@ -49,21 +61,29 @@ export function createRoomReceiver(code: string) {
       if (!msg || typeof msg.d !== "string" || typeof msg.s !== "string" || typeof msg.k !== "string") return null;
       if (!ready) ready = refreshKey();
       await ready;
+      if (strict && !fromServer) {
+        // No key from the server yet: ask again (not too often) and accept nothing meanwhile.
+        if (Date.now() - lastKeyCheck > KEY_RETRY_MS) {
+          ready = refreshKey();
+          await ready;
+        }
+        if (!fromServer) return null;
+      }
       if (msg.k !== key) {
-        if (!key) {
-          key = msg.k; // first key seen
+        if (!key && !strict) {
+          key = msg.k; // first key seen (demo mode only)
         } else if (Date.now() - lastKeyCheck > 3000) {
           await refreshKey(); // the host may have moved to another device
         }
         if (msg.k !== key) {
           const hostSilent = Date.now() - lastAccepted > 9000;
-          if (fromServer || !hostSilent) return null;
+          if (strict || fromServer || !hostSilent) return null;
           key = msg.k;
           epoch = 0;
           seq = 0;
         }
       }
-      if (!(await verify(key, msg.d, msg.s))) return null;
+      if (!key || !(await verify(key, msg.d, msg.s))) return null;
       let snap: RoomSnapshot;
       try {
         snap = JSON.parse(msg.d) as RoomSnapshot;
@@ -71,6 +91,7 @@ export function createRoomReceiver(code: string) {
         return null;
       }
       if (snap.code !== code || typeof snap.epoch !== "number" || typeof snap.seq !== "number") return null;
+      if (epoch === 0 && typeof snap.at === "number" && Date.now() - snap.at > MAX_FIRST_AGE_MS) return null; // replayed old session
       if (snap.epoch < epoch || (snap.epoch === epoch && snap.seq <= seq)) return null; // stale or replayed
       epoch = snap.epoch;
       seq = snap.seq;

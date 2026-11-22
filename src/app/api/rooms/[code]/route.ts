@@ -3,12 +3,17 @@ import { isDemoPartyClosed } from "@/lib/demoParty";
 import { isSupabaseConfigured } from "@/lib/env";
 import { lookupRoom, setRoomKey } from "@/lib/rooms";
 import { getUser } from "@/lib/supabase/server";
+import { allow, requestIp } from "@/lib/shared-limit";
 
 const noStore = { "cache-control": "no-store" };
 
 /** Lets phones check a code is real and learn which signing key belongs to its host. */
-export async function GET(_req: Request, { params }: { params: Promise<{ code: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
+  // Real phones look a code up a handful of times; guessing codes takes thousands of lookups.
+  if (isSupabaseConfigured && !(await allow(`room-lookup:${requestIp(req)}`, 60, 30))) {
+    return NextResponse.json({ exists: false, hostKey: null, ended: false, error: "slow_down" }, { status: 429, headers: noStore });
+  }
   if (!/^[A-Za-z]{4}$/.test(code)) return NextResponse.json({ exists: false, hostKey: null, ended: false }, { headers: noStore });
   if (!isSupabaseConfigured) {
     if (isDemoPartyClosed(code)) return NextResponse.json({ exists: false, hostKey: null, ended: true, demo: true }, { headers: noStore });

@@ -106,6 +106,16 @@ export function verifyTotp(code: string, secretBase32: string, now = Date.now())
   return [-1, 0, 1].some((d) => safeEqual(totpAt(secretBase32, now + d * 30_000), code));
 }
 
+/** The time step a valid code belongs to (for single-use checks), or null if the code is wrong. */
+export function totpStep(code: string, secretBase32: string, now = Date.now()): number | null {
+  if (!/^\d{6}$/.test(code)) return null;
+  for (const d of [-1, 0, 1]) {
+    const t = now + d * 30_000;
+    if (safeEqual(totpAt(secretBase32, t), code)) return Math.floor(t / 30_000);
+  }
+  return null;
+}
+
 export function randomSecretBase32(bytes = 20): string {
   const buf = randomBytes(bytes);
   let bits = 0, value = 0, out = "";
