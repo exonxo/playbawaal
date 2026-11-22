@@ -22,6 +22,7 @@ import { deriveShared, generateExchangeKeys, generateSigningKeys, importSigner, 
 import { HOST_ID, type GameAction, type Player } from "./types";
 import { summarizeGame, type GameResult } from "./results";
 import { ENDS_ON_ITS_OWN, isGameOver } from "./gameOver";
+import { MEMORY_GAMES, rememberSeen, seenFromState, withSeen } from "./builtinMemory";
 import { BOTS, botActions, isBot } from "./testBots";
 import type { Identity } from "./usePlayerRoom";
 import { AVATARS, randomId } from "./util";
@@ -238,12 +239,22 @@ export function useHostRoom(code: string, me: Identity | null, ownerAuthId: stri
   const hiddenAtRef = useRef(0);
   const gameNow = useCallback(() => (hiddenAtRef.current || Date.now()) - stateRef.current.pausedMs, []);
 
+  const lastSeenKey = useRef("");
   const commit = useCallback((next: HostState) => {
     if (next === stateRef.current) return;
     stateRef.current = next;
     setStateRaw(next);
     api.current.flush();
     api.current.save();
+    // Built-in decks: remember the card on screen, so later games deal unseen ones first.
+    if (next.phase === "playing" && next.gameId && MEMORY_GAMES.has(next.gameId)) {
+      const keys = seenFromState(next.gameId, next.gameState);
+      const k = `${next.gameId}|${keys.join("|")}`;
+      if (keys.length && k !== lastSeenKey.current) {
+        lastSeenKey.current = k;
+        rememberSeen(next.gameId, keys);
+      }
+    }
   }, []);
 
   const applyAction = useCallback(
@@ -746,7 +757,9 @@ export function useHostRoom(code: string, me: Identity | null, ownerAuthId: stri
       const s = stateRef.current;
       const players = s.players.filter((p) => p.connected);
       if (info && (players.length < info.minPlayers || players.length > info.maxPlayers)) return;
-      const gameState = mod.init({ players, options: options ?? mod.defaultOptions, now: gameNow() });
+      // This device's seen list goes in fresh every start (rematches too), so decks deal unseen cards first.
+      const opts = withSeen(gameId, options ?? mod.defaultOptions);
+      const gameState = mod.init({ players, options: opts, now: gameNow() });
       // The last finished game's scorecard is kept until a new game really finishes (see endGame).
       commit({ ...s, phase: "playing", gameId, gameState, rematch: [], gameOptions: options ?? mod.defaultOptions });
     },

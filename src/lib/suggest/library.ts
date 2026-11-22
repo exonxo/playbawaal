@@ -55,6 +55,8 @@ export function isLibraryKind(kind: string): kind is LibraryKind {
 export interface Viewer {
   userId?: string | null;
   anonId?: string | null;
+  /** Hashed device ids of the players in the room (0016): items any of them saw are skipped too. */
+  players?: string[];
 }
 
 export interface LibraryItem {
@@ -138,6 +140,23 @@ export async function pickFromLibrary(
   if (!db || (!viewer.userId && !viewer.anonId)) return null;
   const plan = pickPlan(kind, context);
   try {
+    if (viewer.userId && viewer.players?.length && !groupPickMissing) {
+      const g = await db.rpc("library_pick_group", {
+        p_user: viewer.userId,
+        p_players: viewer.players,
+        p_kind: kind,
+        p_categories: plan.categories,
+        p_lang: LANG,
+        p_count: plan.count,
+        p_min: Math.min(plan.count, Math.max(1, opts.min ?? plan.min)),
+        p_exclude_norms: plan.excludeNorms.slice(0, 60),
+        p_exclude_ids: plan.excludeIds.slice(0, 60),
+      });
+      if (!g.error && Array.isArray(g.data)) return screenServed(kind, g.data as { data: unknown }[], context);
+      // 0016 not applied yet: fall back to the host-only pick from now on.
+      if (g.error && /function|does not exist|schema cache/i.test(g.error.message)) groupPickMissing = true;
+      else if (!g.error) return null;
+    }
     const { data, error } = await db.rpc("library_pick", {
       p_user: viewer.userId ?? null,
       p_anon: viewer.userId ? null : viewer.anonId ?? null,
@@ -150,7 +169,18 @@ export async function pickFromLibrary(
       p_exclude_ids: plan.excludeIds.slice(0, 60),
     });
     if (error || !Array.isArray(data)) return null;
-    const shaped = shapeServed(kind, data as { data: unknown }[], context);
+    return screenServed(kind, data as { data: unknown }[], context);
+  } catch {
+    return null;
+  }
+}
+
+let groupPickMissing = false;
+
+/** Shapes served rows, then applies the admin's rules and strictness settings. */
+async function screenServed(kind: LibraryKind, rows: { data: unknown }[], context: Record<string, unknown>): Promise<unknown | null> {
+  try {
+    const shaped = shapeServed(kind, rows, context);
     if (shaped == null) return null;
     // Rules and strictness settings added after an item was saved still apply when it's served.
     const ruled = applyRules(kind, shaped, await loadRules());

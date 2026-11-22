@@ -1,6 +1,6 @@
 "use client";
 import { useParams } from "next/navigation";
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { SuggestPaperButton } from "@/components/suggest/SuggestPaperButton";
 import { requestSuggest } from "@/lib/suggest/client";
 import { NumberPicker } from "@/components/ui";
@@ -209,6 +209,24 @@ function TopicOptionsField({ value, onChange }: { value: Options; onChange: (o: 
       setLoading(false);
     }
   };
+
+  // Opening the settings quietly adds one fresh topic (library first, then the AI), so "All topics"
+  // isn't only the same 10 built-in packs. Nothing changes if it fails.
+  const autoFetched = useRef(false);
+  useEffect(() => {
+    if (autoFetched.current || (valueRef.current.extraTopics?.length ?? 0) > 0) return;
+    autoFetched.current = true;
+    const excludeTopicIds = [...CHOR_TOPICS.map((t) => t.id)];
+    void requestSuggest<ChorTopic>("chor-kaun-topic", { excludeTopicIds }, roomCode)
+      .then(({ data, fallback }) => {
+        if (fallback || !data?.id) return;
+        const latest = valueRef.current;
+        if ((latest.extraTopics ?? []).some((t) => t.id === data.id)) return;
+        onChange({ ...latest, extraTopics: [...(latest.extraTopics ?? []), data] });
+        setHint(`Fresh topic added: ${data.emoji} ${data.label}`);
+      })
+      .catch(() => {});
+  }, [roomCode, onChange]);
 
   return (
     <div className="space-y-3">

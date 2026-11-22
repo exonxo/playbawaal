@@ -1,4 +1,5 @@
 "use client";
+import { freshFirst } from "@/lib/builtinMemory";
 import { LevelPicker } from "@/components/ui";
 import { CHARADES } from "@/content/charades";
 import { HOST_ID, type ControllerProps, type GameModule, type Level, type Player } from "@/lib/types";
@@ -126,7 +127,7 @@ const charades: GameModule<State, Pub, Priv, Options> = {
     order.forEach((p, i) => teams[i % 2 === 0 ? "A" : "B"].push(p.id));
     const base: State = {
       level: options.level,
-      deck: deckFor(options.level),
+      deck: freshFirst(deckFor(options.level), (options as { seen?: string[] }).seen),
       teams,
       scores: { A: 0, B: 0 },
       turnTeam: "A",

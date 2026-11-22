@@ -1,6 +1,6 @@
 "use client";
 import { useParams } from "next/navigation";
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { SuggestPaperButton } from "@/components/suggest/SuggestPaperButton";
 import { KBC_QUESTIONS } from "@/content/kbc";
 import { requestSuggest } from "@/lib/suggest/client";
@@ -160,6 +160,15 @@ function OptionsForm({ value, onChange }: { value: Options; onChange: (o: Option
       setLoading(false);
     }
   };
+  // Opening the settings quietly loads news questions once (from the library; nothing is generated).
+  const autoLoaded = useRef(false);
+  useEffect(() => {
+    if (autoLoaded.current || valueRef.current.news?.length) return;
+    autoLoaded.current = true;
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the settings open
+  }, []);
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-end gap-2">
@@ -185,7 +194,8 @@ const game: GameModule<State, Pub, Priv, Options> = {
       level: null,
       rung: 0,
       question: null,
-      used: [],
+      // Questions this device showed in earlier games count as used (the bank refills when they run out).
+      used: Array.isArray((options as { seen?: unknown })?.seen) ? ((options as unknown as { seen: string[] }).seen).slice(-120) : [],
       removed: [],
       lifelines: { fifty: false, family: false },
       familyShown: false,

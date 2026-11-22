@@ -49,6 +49,8 @@ export function resolveRoundTopic(choice: ChorTopicChoice, extras?: readonly Cho
     const t = topicById(choice) ?? extras?.find((e) => e.id === choice);
     if (t) return t;
   }
+  // Fresh (AI or library) topics come up half the time, so they aren't lost among the 10 built-in packs.
+  if (extras?.length && Math.random() < 0.5) return extras[Math.floor(Math.random() * extras.length)]!;
   const pool = extras?.length ? [...CHOR_TOPICS, ...extras] : CHOR_TOPICS;
   const i = Math.floor(Math.random() * pool.length);
   return pool[i]!;
