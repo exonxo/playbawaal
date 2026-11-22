@@ -21,7 +21,7 @@ import {
 import { deriveShared, generateExchangeKeys, generateSigningKeys, importSigner, open, seal, serialQueue, sign, type StoredKeyPair } from "./secure";
 import { HOST_ID, type GameAction, type Player } from "./types";
 import { summarizeGame, type GameResult } from "./results";
-import { isGameOver } from "./gameOver";
+import { ENDS_ON_ITS_OWN, isGameOver } from "./gameOver";
 import { BOTS, botActions, isBot } from "./testBots";
 import type { Identity } from "./usePlayerRoom";
 import { AVATARS, randomId } from "./util";
@@ -268,8 +268,16 @@ export function useHostRoom(code: string, me: Identity | null, ownerAuthId: stri
   const upsertPlayer = useCallback(
     (id: string, rawName: string, rawAvatar: string, pk?: string) => {
       const s = stateRef.current;
-      const name = cleanName(rawName);
-      if (!name) return;
+      const clean = cleanName(rawName);
+      if (!clean) return;
+      // Two people with the same name can't be told apart in votes and scores: the second becomes "Name 2".
+      const others = new Set(s.players.filter((p) => p.id !== id).map((p) => p.name.toLowerCase()));
+      if (meRef.current && meRef.current.id !== id) others.add(meRef.current.name.trim().toLowerCase());
+      let name = clean;
+      for (let n = 2; others.has(name.toLowerCase()) && n < 100; n++) {
+        const suffix = ` ${n}`;
+        name = clean.slice(0, 16 - suffix.length).trimEnd() + suffix;
+      }
       const taken = new Set(s.players.filter((p) => p.id !== id).map((p) => p.avatar));
       const all = AVATARS as readonly string[];
       let avatar = all.includes(rawAvatar) ? rawAvatar : all[0];
@@ -634,10 +642,8 @@ export function useHostRoom(code: string, me: Identity | null, ownerAuthId: stri
           endRef.current.vote(m.from);
           return;
         }
-        if (body.type === FINISH_ACTION) {
-          endRef.current.finish();
-          return;
-        }
+        // Only the host ends a finished game; a player's "finish" is ignored.
+        if (body.type === FINISH_ACTION) return;
         applyAction({ playerId: m.from, type: body.type, payload: body.payload });
       }),
     );
@@ -741,20 +747,23 @@ export function useHostRoom(code: string, me: Identity | null, ownerAuthId: stri
       const players = s.players.filter((p) => p.connected);
       if (info && (players.length < info.minPlayers || players.length > info.maxPlayers)) return;
       const gameState = mod.init({ players, options: options ?? mod.defaultOptions, now: gameNow() });
-      commit({ ...s, phase: "playing", gameId, gameState, lastResult: null, rematch: [], gameOptions: options ?? mod.defaultOptions });
+      // The last finished game's scorecard is kept until a new game really finishes (see endGame).
+      commit({ ...s, phase: "playing", gameId, gameState, rematch: [], gameOptions: options ?? mod.defaultOptions });
     },
     [commit, gameNow],
   );
 
   const endGame = useCallback(() => {
     const s = stateRef.current;
-    let lastResult: GameResult | null = null;
+    // Keep the previous scorecard unless this game produces a real one.
+    let lastResult: GameResult | null = s.lastResult ?? null;
     const mod = s.gameId ? getGameModule(s.gameId) : null;
-    if (s.phase === "playing" && s.gameId && mod && s.gameState) {
+    const stoppedEarly = !!s.gameId && ENDS_ON_ITS_OWN.has(s.gameId) && !!mod && !!s.gameState && !isGameOver(s.gameId, mod.publicView(s.gameState));
+    if (s.phase === "playing" && s.gameId && mod && s.gameState && !stoppedEarly) {
       try {
-        lastResult = summarizeGame(s.gameId, mod.publicView(s.gameState), s.players, Date.now());
+        lastResult = summarizeGame(s.gameId, mod.publicView(s.gameState), s.players, Date.now()) ?? lastResult;
       } catch {
-        lastResult = null;
+        /* keep the previous scorecard */
       }
     }
     commit({ ...s, phase: "lobby", gameId: null, gameState: null, lastResult, rematch: [] });

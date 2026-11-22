@@ -8,7 +8,8 @@ import { PaperButton, Sticker } from "./paper/Paper";
 /**
  * Shown on every phone once a game has reached its end.
  * Rematch is a vote: when everyone in the room has tapped it, the same game starts again.
- * "Lobby" ends the finished game for everyone straight away (nothing is lost: the scorecard shows in the lobby).
+ * "Lobby" (host only) ends the finished game for everyone straight away (the scorecard shows in the lobby).
+ * Players only vote; they can't end the game for everyone.
  */
 export function GameOverBar({
   players,
@@ -21,7 +22,8 @@ export function GameOverBar({
   meId: string;
   votes: string[];
   onRematch: () => void;
-  onLobby: () => void;
+  /** Host only. Without it, the Rematch button takes the full width. */
+  onLobby?: () => void;
 }) {
   const reduce = useReducedMotion();
   const people = players.filter((p) => p.connected && !isBot(p.id));
@@ -59,13 +61,15 @@ export function GameOverBar({
               </span>
             </span>
           </div>
-          <div className="grid grid-cols-[1fr_auto] gap-3">
-            <PaperButton size="lg" tone={mine ? "paper" : "turmeric"} onClick={onRematch} aria-pressed={mine}>
-              {mine ? <Check className="h-5 w-5" /> : <RotateCcw className="h-5 w-5" />} {mine ? "Rematch pe haan · wapas lo" : "Rematch"}
+          <div className={onLobby ? "grid grid-cols-[1fr_auto] gap-3" : "grid gap-3"}>
+            <PaperButton size="lg" tone={mine ? "paper" : "turmeric"} className="whitespace-nowrap" onClick={onRematch} aria-pressed={mine} aria-label={mine ? "Rematch: haan. Tap to undo" : "Rematch"}>
+              {mine ? <Check className="h-5 w-5" /> : <RotateCcw className="h-5 w-5" />} {mine ? "Haan ✓ (undo)" : "Rematch"}
             </PaperButton>
-            <PaperButton size="lg" tone="paper" onClick={onLobby}>
-              <Home className="h-5 w-5" /> Lobby
-            </PaperButton>
+            {onLobby && (
+              <PaperButton size="lg" tone="paper" className="whitespace-nowrap" onClick={onLobby}>
+                <Home className="h-5 w-5" /> Lobby
+              </PaperButton>
+            )}
           </div>
         </div>
       </motion.div>

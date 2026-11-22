@@ -6,14 +6,15 @@
  * 1280×720 and 1920×1080, and type scales with the screen height.
  */
 import { LayoutGroup, motion } from "motion/react";
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { Player } from "@/lib/types";
 import { spring } from "./motion";
 import { CountUp, Sticker } from "./Paper";
 
 /** Type scale for the TV, in screen-height units so 720p and 1080p both read from the sofa. */
 export const tv = {
-  label: "font-bold uppercase tracking-[0.18em] text-muted text-[clamp(0.85rem,1.9vh,1.3rem)]",
+  // Read from a sofa: at least 20px even on a 720p TV.
+  label: "font-bold uppercase tracking-[0.16em] text-muted text-[clamp(1.25rem,2.4vh,1.6rem)]",
   lead: "text-[clamp(1.2rem,3vh,2.1rem)] leading-snug",
   title: "font-display font-extrabold leading-[1.02] text-[clamp(2rem,5vh,3.75rem)]",
   headline: "font-display font-extrabold leading-[0.98] text-[clamp(2.75rem,7.5vh,5.75rem)]",
@@ -108,13 +109,33 @@ export function TvLeaderboard({
     .map((id) => ({ id, p: players.find((x) => x.id === id), s: scores[id] ?? 0 }))
     .sort((a, b) => b.s - a.s);
   const k = useTvScale();
-  const shown = list.slice(0, maxRows);
+  // Show only the rows that really fit (a 720p TV fits fewer), so nobody is silently cut off and
+  // "+N aur" counts everyone who isn't shown.
+  const olRef = useRef<HTMLOListElement>(null);
+  const [fit, setFit] = useState(maxRows);
+  useEffect(() => {
+    const ol = olRef.current;
+    if (!ol) return;
+    const measure = () => {
+      const row = ol.querySelector("li");
+      if (!row) return;
+      const gap = parseFloat(getComputedStyle(ol).rowGap) || 0;
+      const rows = Math.max(1, Math.floor((ol.clientHeight + gap) / (row.getBoundingClientRect().height + gap)));
+      setFit((f) => (f === rows ? f : rows));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(ol);
+    return () => ro.disconnect();
+  }, [list.length]);
+  const limit = Math.min(maxRows, fit);
+  const shown = list.length > limit ? list.slice(0, Math.max(1, limit - 1)) : list;
   const more = list.length - shown.length;
   return (
     <TvCard className="flex min-h-0 flex-1 flex-col p-[clamp(0.9rem,2vh,1.6rem)]">
       <div className={tv.label}>{title}</div>
       <LayoutGroup>
-        <ol className="mt-[clamp(0.5rem,1.5vh,1rem)] flex min-h-0 flex-1 flex-col justify-start gap-[clamp(0.25rem,0.9vh,0.6rem)] overflow-hidden">
+        <ol ref={olRef} className="mt-[clamp(0.5rem,1.5vh,1rem)] flex min-h-0 flex-1 flex-col justify-start gap-[clamp(0.25rem,0.9vh,0.6rem)] overflow-hidden">
           {shown.map(({ id, p, s }, i) => (
             <motion.li
               key={id}
@@ -136,7 +157,7 @@ export function TvLeaderboard({
           ))}
         </ol>
       </LayoutGroup>
-      {more > 0 && <div className="mt-1 text-[clamp(0.9rem,2vh,1.2rem)] text-muted">+{more} aur</div>}
+      {more > 0 && <div className="mt-1 text-[clamp(1.1rem,2.2vh,1.4rem)] font-bold text-muted">+{more} aur</div>}
     </TvCard>
   );
 }

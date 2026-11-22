@@ -308,7 +308,7 @@ function PlayerFooter({
             >
               <MiniCardBack className="!h-7 !w-5" />
               <div className="min-w-0 flex-1">
-                <div className="truncate font-display text-[11px] font-extrabold uppercase leading-tight text-ink">{p?.name ?? "…"}</div>
+                <div className="line-clamp-2 break-all font-display text-[12px] font-extrabold uppercase leading-tight text-ink">{p?.name ?? "…"}</div>
                 <motion.div
                   key={`${s.playerId}-${counts[s.playerId] ?? 0}`}
                   animate={countPulse === s.playerId ? { scale: [1, 1.35, 1] } : undefined}

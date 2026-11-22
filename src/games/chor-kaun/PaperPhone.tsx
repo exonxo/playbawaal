@@ -493,9 +493,10 @@ export function Phone({ view, priv, me, players, send, now, isHost, hostAct }: P
                   >
                     <Sticker id={p.avatar} size={44} />
                     <span className="min-w-0 flex-1 leading-tight">
-                      <span className="block truncate text-p-lead font-bold">{p.name}</span>
-                      <span className="mt-1 flex h-4 items-center gap-1.5 text-p-note font-semibold text-ink/70">
-                        {hasVoted ? "vote de diya" : "soch rahe hain…"}
+                      {/* Up to 2 lines before cutting: you must know who you're voting for. */}
+                      <span className="line-clamp-2 break-words text-p-lead font-bold">{p.name}</span>
+                      <span className="mt-1 flex h-4 items-center gap-1 whitespace-nowrap text-p-note font-semibold text-ink/70">
+                        {hasVoted ? "✓ voted" : "…"}
                       </span>
                     </span>
                     <AnimatePresence>

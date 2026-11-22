@@ -265,7 +265,7 @@ function HostRoom({
 
   const endGameSheet = (
     <PaperSheet open={sheet === "end"} onClose={() => setSheet(null)} title="End this game?">
-      <p className="text-p-body text-muted">Everyone goes back to the lobby. This game’s scores are cleared.</p>
+      <p className="text-p-body text-muted">Everyone goes back to the lobby. A game stopped before its end doesn’t count; the last finished scorecard stays.</p>
       <div className="mt-5 grid grid-cols-2 gap-3">
         <PaperButton tone="paper" size="lg" onClick={() => setSheet(null)}>
           Keep playing
@@ -410,6 +410,7 @@ function HostRoom({
       <div className="lg:grid lg:grid-cols-[minmax(0,22rem)_1fr] lg:items-start lg:gap-8 xl:grid-cols-[minmax(0,24rem)_1fr] xl:gap-10 min-[1440px]:grid-cols-[minmax(0,26rem)_1fr]">
         <aside className="space-y-6 lg:sticky lg:top-28">
           {invite}
+          <TvCard code={code} onCopy={(link) => void copy(link, "TV link copied — open it on the TV or laptop")} />
 
           <section>
             <h2 className="text-p-lead font-extrabold">
@@ -446,9 +447,6 @@ function HostRoom({
               ))}
             </GameTable>
           )}
-          <p className="mt-4 text-p-note text-muted">
-            Need a shared view for the room? Tap <b className="text-ink">TV mode</b> in the header to open the read-only big-screen page in a new tab.
-          </p>
         </section>
       </div>
 
@@ -573,5 +571,30 @@ function HostRoom({
       <Toast text={toast} />
     </RoomShell>
     </>
+  );
+}
+
+/**
+ * How to get the game on the big screen, said plainly: open this link on the TV or laptop (not on
+ * this phone). The header's TV button is hidden on narrow phones, so this card is the main way.
+ */
+function TvCard({ code, onCopy }: { code: string; onCopy: (link: string) => void }) {
+  const [origin, setOrigin] = useState("");
+  useEffect(() => setOrigin(window.location.origin), []);
+  const link = `${origin}/room/${code}/tv`;
+  const shown = link.replace(/^https?:\/\//, "");
+  return (
+    <section aria-label="Put it on the TV" className="cut mt-4 flex flex-wrap items-center gap-3 rounded-soft bg-card p-3">
+      <Tv className="h-6 w-6 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <div className="font-display text-p-body font-extrabold">TV pe lagao</div>
+        <p className="text-p-note text-muted">
+          On the TV or laptop, open <span className="break-all font-bold text-ink">{shown}</span>
+        </p>
+      </div>
+      <PaperButton tone="paper" className="whitespace-nowrap" onClick={() => onCopy(link)}>
+        Copy link
+      </PaperButton>
+    </section>
   );
 }

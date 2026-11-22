@@ -206,7 +206,7 @@ const antakshari: GameModule<State, Pub, undefined, Options> = {
         const judges = s.teams[other(s.turn)].filter((id) => connectedIds(players).has(id));
         // Nobody on the other team to judge: the song counts.
         if (judges.length === 0) return accept(s, now);
-        return { ...s, phase: "judging", votes: {}, deadline: null };
+        return { ...s, phase: "judging", votes: {}, deadline: null, lastEvent: null }; // an old verdict must not show during the new vote
       }
       if (a.type === "giveup" && s.phase === "singing") return concede(s, now, "giveup");
       if (a.type === "letter" && s.phase === "next-letter") {
