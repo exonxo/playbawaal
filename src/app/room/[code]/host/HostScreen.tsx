@@ -1,6 +1,6 @@
 "use client";
 import { setRoomPlayers } from "@/lib/suggest/roomPlayers";
-import { Check, ChevronDown, DoorClosed, Home, Info, MonitorSmartphone, Play, QrCode, Share2, Tv, X } from "lucide-react";
+import { Check, ChevronDown, CircleStop, Home, Info, MonitorSmartphone, Play, QrCode, Share2, Tv, X } from "lucide-react";
 import QRCode from "qrcode";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PartyEnded } from "@/components/PartyEnded";
@@ -203,7 +203,7 @@ function HostRoom({
 
   const endPartyControls = (
     <button type="button" aria-label="End party for everyone" onClick={() => setSheet("endParty")} className="press flex h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-full bg-tint px-0 text-p-note font-bold text-ink hover:bg-tint-2 min-[440px]:px-3" title="End party">
-      <DoorClosed className="h-5 w-5" /> <span className="hidden min-[440px]:inline">End party</span>
+      <CircleStop className="h-5 w-5 text-vermilion" strokeWidth={2.4} /> <span className="hidden min-[440px]:inline">End party</span>
     </button>
   );
 

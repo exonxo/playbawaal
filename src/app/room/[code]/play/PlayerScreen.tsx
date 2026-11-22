@@ -1,5 +1,5 @@
 "use client";
-import { LogOut, X } from "lucide-react";
+import { DoorOpen, X } from "lucide-react";
 import { PartyEnded } from "@/components/PartyEnded";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -115,7 +115,7 @@ export function PlayerScreen({ code }: { code: string }) {
           onClick={() => setConfirmLeave(true)}
           className={iconButtonClass}
         >
-          <LogOut className="h-5 w-5" />
+          <DoorOpen className="h-5 w-5" />
         </button>
       }
     >
