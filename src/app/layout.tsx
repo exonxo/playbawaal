@@ -10,7 +10,7 @@ const bwAccent = Baloo_2({ variable: "--font-baloo", subsets: ["latin"], weight:
 const bwBody = Nunito_Sans({ variable: "--font-nunito", subsets: ["latin"], weight: ["400", "600", "700", "800"] });
 
 const description =
-  "Desi party games for your family and friends. Put it on the big screen, join from your phones, and let the madness begin.";
+  "14 desi party games for family and friends: Draw & Guess, Spin the Bottle, Puno, Housie, KBC and more. Put it on the big screen, join from your phones with a room code, no app needed.";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://playbawaal.vercel.app"),

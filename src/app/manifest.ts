@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "BAWAAL — desi party games",
     short_name: "BAWAAL",
-    description: "Desi party games for your family and friends. Put it on the big screen, join from your phones, and let the madness begin.",
+    description: "14 desi party games for family and friends. Big screen on the TV, everyone joins from their phones, no app needed.",
     start_url: "/",
     display: "standalone",
     background_color: "#fbf6ee",
