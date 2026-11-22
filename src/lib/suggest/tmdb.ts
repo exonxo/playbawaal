@@ -246,6 +246,26 @@ export function similarity(a: string, b: string): number {
 }
 
 /** Test hook: forget cached lists. */
+/**
+ * The film's Indian certificate (CBFC: U, UA, UA 7+, UA 13+, UA 16+, A, S), or null if TMDB doesn't
+ * know it. Cached for a month: certificates don't change.
+ */
+export async function indiaCertification(id: number): Promise<string | null> {
+  const data = (await tmdbGet(`/movie/${id}/release_dates`, "", 30 * 86400)) as { results?: { iso_3166_1?: string; release_dates?: { certification?: string }[] }[] } | null;
+  const india = data?.results?.find((r) => r.iso_3166_1 === "IN");
+  const cert = india?.release_dates?.map((d) => (d.certification ?? "").trim()).find(Boolean);
+  return cert ? cert.toUpperCase() : null;
+}
+
+/** Whether a certificate suits a family game (all ages or with parents). Unknown counts as fine. */
+export function familyCertificate(cert: string | null): boolean {
+  if (!cert) return true;
+  const c = cert.replace(/\s+/g, "").replace("U/A", "UA");
+  if (c === "A" || c === "S") return false;
+  const age = /^UA(\d+)\+?$/.exec(c);
+  return !age || Number(age[1]) < 16;
+}
+
 export function clearTmdbCache(): void {
   listCache.clear();
 }
