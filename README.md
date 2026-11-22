@@ -6,6 +6,13 @@
 
 Desi party games for the whole family. Put the **big screen** on a TV or laptop and everyone joins from their **phones** with a 4-letter room code. No app to install, and players don't need an account. Only the host signs in with Google.
 
+**What's new**
+- 🍾 **Spin the Bottle (Sach ya Himmat)**: four moods (Bacche, Parivaar, College Gang, Office Party), two-sided cards you can flip, and passing is always free.
+- ✨ **Fresh content every party**: an AI content library that skips anything the host *or anyone in the room* has seen in the last 30 days. Built-in decks remember what a device has shown, so they deal unseen cards first.
+- 🎨 **Draw & Guess tools**: a phone toolbar with sizes, 12 colours, eraser, fill bucket, undo/redo and smooth lines.
+- 🛡️ **Safer rooms**: phones trust only the host key the server holds, rooms have flood limits, room codes can't be guessed at speed, and every page sends security headers.
+- 🧭 **Admin content engine**: rules for the AI, strictness per mood, a player reports queue, and player signals that retire weak content automatically.
+
 ## Games
 
 | Game | Ages | Players |
@@ -22,6 +29,8 @@ Desi party games for the whole family. Put the **big screen** on a TV or laptop 
 | 🎟️ Housie (Tambola) | 6+ | 1–50 |
 | 🎲 Ludo Yatra | 6+ | 2–4 |
 | ⚡ Jaldi Bolo | 8+ | 1–20 |
+| 🃏 Puno | 7+ | 2–10 |
+| 🍾 Spin the Bottle | 6+ (by mood) | 3–20 |
 
 The full rules for every game are in the app at `/games` (source: `src/games/catalog.ts`).
 
@@ -38,16 +47,20 @@ The full rules for every game are in the app at `/games` (source: `src/games/cat
 
 - **The host device runs the game.** Each game is a module in `src/games/<id>/` with a pure `reduce()`, a `publicView()` for everyone and a `privateView()` for each player's secrets (roles, tickets, words). Its `Screen` component is for the TV and its `Controller` component is for phones.
 - **Realtime** uses Supabase broadcast channels and presence. Game state is not stored in the database. The host keeps it in memory and in `localStorage`, so refreshing the TV page resumes the game.
-- **Database:** `rooms` records which signed-in host owns which code. `content_items` is reserved for the future LLM content refresh.
+- **Database:** `rooms` records which signed-in host owns which code. The **content library** (`content_library`, `content_seen`) holds AI-made items and what each host and player device has been shown. The **content engine** tables hold admin rules, strictness settings, player signals and reports. No player names or emails are stored with any of it.
 - **Demo mode:** if the Supabase env vars are missing, login is skipped and rooms sync between tabs of the same browser using `BroadcastChannel`. This is useful for development: open `/host` in one tab and `/join` in others.
 
 ### Security model
 
-- **Host updates are signed.** The host's device signs every room update (ECDSA P-256, WebCrypto). Phones only accept updates signed with the key the server has on record for that room (`rooms.host_key`), so nobody in the room can fake the host, replay old updates or freeze the game.
+- **Host updates are signed.** The host's device signs every room update (ECDSA P-256, WebCrypto). On the real site, phones accept **only** the key the server has on record for that room (`rooms.host_key`). They never trust a key seen on the channel. The host saves its key before its first broadcast, and old signed updates can't be replayed to a phone that just loaded.
 - **Secrets are encrypted per player.** Each phone agrees a secret key with the host (ECDH → AES-GCM). Roles, tickets and words are encrypted for their owner, and a player's actions are encrypted with the same key, so players can't read each other's secrets or act as someone else.
-- **One host device at a time.** A second device opening the host page is asked to take over; the first one then stops.
-- **Rooms table is closed.** After `0002_room_security.sql`, room codes can't be listed; the app only looks them up one at a time through database functions.
-- Still open: anyone with the code can join and can flood the channel with junk (it is ignored, but it uses your Realtime quota), and the code lookup has no rate limit.
+- **One host device at a time.** A second device opening the host page is asked to take over; the first one then stops. A faked "another device is hosting" is ignored unless the server holds a different key.
+- **Flood and guessing limits.** Player actions and sync requests are rate-limited per sender, and messages are capped at 64 KB. Room-code lookups are rate-limited per IP through a shared limiter in the database. Browsers can't call the room functions directly.
+- **Rooms table is closed.** Room codes can't be listed; the app only looks them up one at a time through server-side database functions.
+- **Player signals can't be gamed.** Each host account counts once per item, event and day, and only for items it was actually shown. Switching an item off needs several different hosts.
+- **Admin panel:** a secret URL, password plus authenticator code (each code works once), lockout after failed attempts, revocable sessions, and an audit log written before every change.
+- **Headers:** anti-framing, nosniff, a strict referrer policy and a permissions policy on every page.
+- Still open: anyone with a room's code can join it and see what the TV shows (names, scores). Secrets stay encrypted. A plan for private channels is in `docs/realtime-private-channel.md`.
 
 ## Run locally
 
@@ -59,7 +72,7 @@ npm run dev            # demo mode, no setup needed
 ## Set up Supabase
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. In **SQL Editor**, run `supabase/migrations/0001_init.sql`, then `supabase/migrations/0002_room_security.sql`.
+2. In **SQL Editor**, run every file in `supabase/migrations/` in number order (`0001` … `0016`). Each one is safe to run more than once. If you ever run `0012` again, run `0013` after it.
 3. Go to **Authentication → Sign In / Providers → Google**, enable it and paste a Google OAuth client ID and secret:
    - Create the client in [Google Cloud Console](https://console.cloud.google.com/apis/credentials) under **Create credentials → OAuth client ID → Web application**.
    - Under **Authorized redirect URIs**, add `https://YOUR-PROJECT.supabase.co/auth/v1/callback`.
@@ -73,7 +86,14 @@ npm run dev            # demo mode, no setup needed
 ## Deploy on Vercel
 
 1. Import the GitHub repo in Vercel. The framework is detected as Next.js automatically.
-2. Add the environment variables `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+2. Add the environment variables `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`. The optional ones switch features on:
+   - `SUPABASE_SERVICE_ROLE_KEY`: the content library, the content engine and shared rate limits.
+   - `GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `CF_ACCOUNT_ID` + `CF_API_TOKEN`: AI content (tried in turn).
+   - `TMDB_READ_TOKEN`: real movie titles and film certificates.
+   - `NEWSAPI_KEY`: KBC news questions.
+   - `ADMIN_PATH`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `ADMIN_TOTP_SECRET`, `ADMIN_SESSION_SECRET`: the admin panel. Make them with `node scripts/admin-setup.mjs`.
+   - `CRON_SECRET`: the daily cron.
+   - `SIGNAL_SECRET`: a dedicated key for the one-way hashes used by player signals.
 3. Deploy, then put the production URL into the Supabase URL Configuration (step 4 above).
 
 ## Keep-alive
@@ -86,16 +106,16 @@ Free Supabase projects pause after about a week without activity. `vercel.json` 
 2. Register it in `src/games/modules.ts`.
 3. Add its description to `src/games/catalog.ts`.
 
-## Roadmap: fresh content with an LLM
+## Fresh content engine
 
-Content currently ships in `src/content/`. The plan is a weekly server job (for example a Vercel Cron hitting an API route) that:
+Built-in content ships in `src/content/`. On top of it:
 
-1. asks an LLM with web search for new items (recent films, cricket, festivals),
-2. runs a safety and moderation pass,
-3. inserts them into `content_items` with `approved = false`,
-4. waits for a quick review in an admin page before games read them.
+1. **The content library.** AI-made emoji puzzles, Chor Kaun topics, dares, KBC news questions and Spin the Bottle prompts are saved and served again. Nobody gets an item that the host, or any player in the room, has seen in the last 30 days.
+2. **A weekly top-up.** It runs inside the daily cron and fills the library: real movie titles from TMDB, a mix of non-movie emoji categories, Chor Kaun topics, dares, Spin the Bottle prompts and fact-checked news questions.
+3. **Safety in code, not just in the instructions.** Every AI item passes validators, the admin's rules and the per-mood strictness settings, both when it's saved and when it's served. Near-duplicates are skipped, and adult-certified films never become family puzzles.
+4. **Player signals.** What gets flipped, passed, loved or reported feeds back. Weak items retire automatically, and the admin can undo that.
 
-Games never call the LLM live during play, which keeps them fast, cheap and kid-safe.
+Games never wait for the AI during play. If it's slow or down, the built-in decks are used, so games stay fast, cheap and kid-safe.
 
 ## Contributing
 
