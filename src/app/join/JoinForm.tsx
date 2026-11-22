@@ -60,7 +60,7 @@ export function JoinForm() {
             <p className="mt-2 max-w-xl text-p-body text-muted">Ask the person who started the party for the 4-letter code.</p>
           </div>
 
-          <div className="lg:grid lg:grid-cols-2 lg:gap-10 lg:gap-y-7">
+          <div className="space-y-7 lg:grid lg:grid-cols-2 lg:gap-10 lg:gap-y-7 lg:space-y-0">
             <div>
               <label htmlFor="room-code" className="font-display text-p-lead font-extrabold">
                 Room code

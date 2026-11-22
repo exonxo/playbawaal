@@ -374,6 +374,7 @@ export function Phone({ view, priv, me, players, send, now, isHost, hostAct }: P
   const sfx = useSfx();
   const [sheet, setSheet] = useState<"board" | "scores" | null>(null);
   const [localAuto, setLocalAuto] = useState(false);
+  const [notCalled, setNotCalled] = useState<number | null>(null);
   useEffect(() => {
     try {
       setLocalAuto(localStorage.getItem(AUTO_KEY) === "1");
@@ -491,11 +492,23 @@ export function Phone({ view, priv, me, players, send, now, isHost, hostAct }: P
             } catch {}
           }}
           onMark={(n, wasMarked) => {
+            // A number that hasn't been called can't be marked: say so now, instead of a public "Bogey!" later.
+            if (!wasMarked && !called.has(n)) {
+              sfx.mine("buzz", 60);
+              setNotCalled(n);
+              return;
+            }
+            setNotCalled(null);
             send("mark", n);
             if (!wasMarked) sfx.mine("pop", 15);
           }}
         />
-        {!view.done && (
+        {notCalled !== null && !view.done && (
+          <p role="status" className="-mt-1 text-center text-p-body font-bold text-vermilion">
+            {notCalled} abhi bola nahi gaya — sirf bulaye gaye numbers mark karo.
+          </p>
+        )}
+        {!view.done && notCalled === null && (
           <p className="-mt-1 text-center text-p-note font-semibold text-muted" aria-live="polite">
             {autoMark
               ? view.autoMark

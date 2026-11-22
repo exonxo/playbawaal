@@ -135,7 +135,7 @@ export function LevelPicker({ value, onChange }: { value: Level; onChange: (l: L
         <button
           key={o.v}
           onClick={() => onChange(o.v)}
-          className={`rounded-xl border px-3 py-2 text-left ${value === o.v ? "border-saffron bg-saffron/15" : "border-line bg-tint"}`}
+          className={`min-h-11 rounded-xl border px-3 py-2 text-left ${value === o.v ? "border-saffron bg-saffron/15" : "border-line bg-tint"}`}
         >
           <div className="font-bold">{o.label}</div>
           <div className="text-xs text-muted">{o.hint}</div>
@@ -166,7 +166,7 @@ export function NumberPicker({
           <button
             key={n}
             onClick={() => onChange(n)}
-            className={`rounded-lg border px-3 py-1.5 font-bold ${value === n ? "border-saffron bg-saffron/15" : "border-line bg-tint"}`}
+            className={`min-h-11 min-w-11 rounded-lg border px-3 py-2 font-bold ${value === n ? "border-saffron bg-saffron/15" : "border-line bg-tint"}`}
           >
             {format(n)}
           </button>

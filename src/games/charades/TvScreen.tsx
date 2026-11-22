@@ -183,7 +183,7 @@ export function TvScreen({ view, players, act, now, spectator }: ScreenProps<Pub
           {(["A", "B"] as Team[]).map((t, i) => (
             <TeamCard key={t} t={t} view={view} players={players} index={i} />
           ))}
-          <p className={`text-center text-ink/60 ${tv.body}`}>Koi timer nahi — aaram se khelo · Turn {view.turns + 1}</p>
+          <p className={`text-center text-ink/60 ${tv.body}`}>Koi time limit nahi — aaram se khelo · Turn {view.turns + 1}</p>
         </div>
       </div>
       {!spectator && (

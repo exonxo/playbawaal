@@ -202,8 +202,8 @@ function HostRoom({
   }, [state.phase, state.gameId, startingGameId]);
 
   const endPartyControls = (
-    <button type="button" aria-label="End party for everyone" onClick={() => setSheet("endParty")} className={iconButtonClass} title="End party">
-      <DoorClosed className="h-5 w-5" />
+    <button type="button" aria-label="End party for everyone" onClick={() => setSheet("endParty")} className="press flex h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-full bg-tint px-0 text-p-note font-bold text-ink hover:bg-tint-2 min-[440px]:px-3" title="End party">
+      <DoorClosed className="h-5 w-5" /> <span className="hidden min-[440px]:inline">End party</span>
     </button>
   );
 
@@ -321,8 +321,8 @@ function HostRoom({
         onTestMode={setTestMode}
         right={
           <>
-            <button onClick={() => setSheet("end")} aria-label="Back to lobby" className={iconButtonClass}>
-              <Home className="h-5 w-5" />
+            <button onClick={() => setSheet("end")} aria-label="End this game, back to lobby" className="press flex h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-full bg-tint px-0 text-p-note font-bold text-ink hover:bg-tint-2 min-[440px]:px-3">
+              <Home className="h-5 w-5" /> <span className="hidden min-[440px]:inline">Lobby</span>
             </button>
             {endPartyControls}
           </>

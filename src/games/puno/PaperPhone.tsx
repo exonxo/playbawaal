@@ -171,7 +171,7 @@ function TurnSticker({ myTurn }: { myTurn: boolean }) {
       transition={slapSpring}
       className="absolute right-2 top-2 z-30 border-[3px] border-ink bg-vermilion px-3 py-1.5 font-display text-xs font-extrabold uppercase tracking-wide text-ink shadow-[5px_5px_0_0_var(--ink)]"
     >
-      Teri baari!
+      Aapki baari!
     </motion.div>
   );
 }
