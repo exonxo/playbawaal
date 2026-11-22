@@ -34,21 +34,26 @@ function Spiral() {
 /** The live drawing, large. Each turn is a new page; the old one tears off. */
 function Pad({ view, drawer }: { view: Pub; drawer: Player | null }) {
   const reduce = useReducedMotion();
-  const { strokes, stale } = usePadStrokes(view.pad);
+  const { items, stale, mismatch } = usePadStrokes(view.sketch);
   return (
     <div className="cut relative h-full rounded-soft bg-paper p-[1.6vh] pt-[3vh]" style={{ aspectRatio: "1 / 1", maxWidth: "100%" }}>
       <Spiral />
       <div className="relative h-full w-full">
         <AnimatePresence initial={false}>
           <motion.div
-            key={view.pad.turn}
+            key={view.turn}
             className="absolute inset-0 overflow-hidden rounded-cut border-[1.5px] border-ink/25 bg-white"
             style={{ transformOrigin: "20% 0%" }}
             initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0, rotate: 0, transition: { duration: dur.screen, ease: ease.out } }}
             exit={reduce ? { opacity: 0, transition: { duration: 0.15 } } : { y: -80, rotate: -7, opacity: 0, transition: { duration: 0.4, ease: ease.in } }}
           >
-            <PadDrawing strokes={strokes} className="h-full w-full" label={`${drawer?.name ?? "The drawer"}'s drawing`} />
+            <PadDrawing items={items} className="h-full w-full" label={`${drawer?.name ?? "The drawer"}'s drawing`} />
+            {mismatch && (
+              <span className="absolute inset-x-[2vh] top-1/2 -translate-y-1/2 rounded-cut bg-paper/95 p-[1vh] text-center font-semibold" style={{ fontSize: "clamp(0.9rem, 2vh, 1.4rem)" }}>
+                Game ka naya version aaya hai. Is screen ko refresh karein.
+              </span>
+            )}
             {view.phase === "choosing" && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-[1.6vh] text-center">
                 <Sticker id={drawer?.avatar} size={110} tilt={-4} />

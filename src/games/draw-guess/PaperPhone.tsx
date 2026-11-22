@@ -1,6 +1,6 @@
 "use client";
 import confetti from "canvas-confetti";
-import { Check, Eraser, Eye, Pencil, Send, SkipForward, Trophy, Undo2, WifiOff } from "lucide-react";
+import { Check, Eraser, Eye, PaintBucket, Pencil, Redo2, Send, SkipForward, Trash2, Trophy, Undo2, WifiOff } from "lucide-react";
 import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "motion/react";
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { CountUp, PaperButton, PaperSheet, Sticker } from "@/components/paper/Paper";
@@ -10,8 +10,28 @@ import { celebrate } from "@/lib/celebrate";
 import { playerColor } from "@/lib/colors";
 import { useOnChange, useSfx } from "@/lib/roomAudio";
 import type { PhoneProps, Player } from "@/lib/types";
-import { PadDrawing, StrokesSvg } from "./pad";
-import { COLORS, COLOR_NAMES, DRAWER_AWAY_SKIP, WIDTHS, type Priv, type Pub, type Stroke } from "./shared";
+import { PadCanvas, PadDrawing, type LiveInk } from "./pad";
+import {
+  COLORS,
+  COLOR_NAMES,
+  DRAWER_AWAY_SKIP,
+  MAX_BATCH,
+  MAX_STROKE_POINTS,
+  SEND_EVERY,
+  WIDTHS,
+  WIDTH_NAMES,
+  canAddItem,
+  clampCoord,
+  fillCount,
+  pointCount,
+  pointsLeft,
+  simplify,
+  type FeedEntry,
+  type Item,
+  type Priv,
+  type Pub,
+  type Stroke,
+} from "./shared";
 import { usePadStrokes } from "./usePad";
 
 const PENCIL = "#6b6258";
@@ -87,6 +107,24 @@ function TimeStrip({ deadline, total, now, label }: { deadline: number; total: n
   );
 }
 
+/** Compact round timer for the drawer's one-screen layout. */
+function DrawClock({ deadline, total, now }: { deadline: number; total: number; now: number }) {
+  const left = Math.max(0, deadline - now);
+  const secs = Math.ceil(left / 1000);
+  const frac = Math.max(0, Math.min(1, left / total));
+  const low = secs <= 10;
+  const r = 19, c = 2 * Math.PI * r;
+  return (
+    <div role="timer" aria-label={`${secs} seconds left`} className="relative h-11 w-11 shrink-0">
+      <svg viewBox="0 0 44 44" className="h-11 w-11 -rotate-90" aria-hidden>
+        <circle cx="22" cy="22" r={r} fill="var(--paper)" stroke="var(--line)" strokeWidth="4" />
+        <circle cx="22" cy="22" r={r} fill="none" stroke={low ? "var(--vermilion)" : PENCIL} strokeWidth="4" strokeDasharray={c} strokeDashoffset={c * (1 - frac)} style={{ transition: "stroke-dashoffset 0.3s linear" }} />
+      </svg>
+      <span className={`font-display absolute inset-0 flex items-center justify-center text-p-body font-extrabold tabular-nums ${low ? "text-vermilion" : ""}`}>{secs}</span>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* The sketch pad                                                       */
 /* ------------------------------------------------------------------ */
@@ -143,204 +181,527 @@ function SketchPad({ pageKey, children, footer }: { pageKey: string; children: R
 
 /** What guessers (and everyone at reveal) see on the page. */
 function ViewerPage({ view, label }: { view: Pub; label: string }) {
-  const { strokes, stale } = usePadStrokes(view.pad);
+  const { items, stale, mismatch } = usePadStrokes(view.sketch);
   return (
     <>
-      <PadDrawing strokes={strokes} label={label} />
+      <PadDrawing items={items} label={label} className="h-full" />
       {stale && <span className="absolute bottom-2 right-2 rounded-cut bg-paper/90 px-2 py-0.5 text-p-note font-semibold text-muted">Drawing aa rahi hai…</span>}
+      {mismatch && <VersionNote />}
     </>
   );
 }
 
-/** Crayon-shaped colour button. */
-function Crayon({ color, name, on, onPick }: { color: string; name: string; on: boolean; onPick: () => void }) {
+/** Shown when this phone and the host run different versions of the game. */
+function VersionNote() {
+  return (
+    <div role="status" className="absolute inset-x-3 top-1/2 -translate-y-1/2 rounded-cut border-[1.5px] border-ink bg-paper px-3 py-2 text-center text-p-body font-semibold">
+      Game ka naya version aaya hai. Drawing dekhne ke liye page refresh karein.
+    </div>
+  );
+}
+
+type Tool = "pen" | "eraser" | "fill";
+type Popup = null | "size" | "color" | "clear";
+
+/** Dot that previews line size and colour. */
+function SizeDot({ w, color, max = 18 }: { w: number; color: string; max?: number }) {
+  const px = Math.min(max, Math.round(3 + (WIDTHS[w] ?? 12) * 0.32));
+  return <span aria-hidden className="block rounded-full border border-ink/40" style={{ width: px, height: px, background: color }} />;
+}
+
+function ToolButton({
+  label,
+  on = false,
+  disabled = false,
+  onClick,
+  children,
+  danger = false,
+  expanded,
+}: {
+  label: string;
+  on?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  danger?: boolean;
+  expanded?: boolean;
+}) {
   return (
     <button
       type="button"
-      aria-label={`${name} crayon`}
-      aria-pressed={on}
-      onClick={onPick}
-      className="press flex h-12 w-9 shrink-0 items-end justify-center"
-      style={{ transform: on ? "translateY(-6px)" : undefined, transition: "transform 0.2s var(--ease-out-soft)" }}
+      aria-label={label}
+      aria-pressed={expanded === undefined ? on : undefined}
+      aria-expanded={expanded}
+      disabled={disabled}
+      onClick={onClick}
+      className={`press relative flex h-12 min-w-0 items-center justify-center rounded-cut border-[1.5px] disabled:opacity-35 ${
+        on ? "border-ink bg-turmeric shadow-[2px_2px_0_0_var(--ink)]" : "border-ink/25 bg-paper"
+      } ${danger ? "text-vermilion" : ""}`}
     >
-      <svg aria-hidden viewBox="0 0 20 44" className="h-11 w-5">
-        <path d="M4 14 L10 2 L16 14 Z" fill={color} stroke="#1e1a17" strokeWidth="1.5" strokeLinejoin="round" />
-        <rect x="3" y="14" width="14" height="28" rx="2" fill={color} stroke="#1e1a17" strokeWidth="1.5" />
-        <rect x="3" y="20" width="14" height="6" fill="#fffdf8" opacity="0.55" />
-      </svg>
+      {children}
     </button>
   );
 }
 
-/** The drawer's page: draw with a finger, strokes go to the host in small batches. */
-function DrawerPad({ turn, start, send }: { turn: number; start: Stroke[]; send: (t: string, p?: unknown) => void }) {
-  const [strokes, setStrokes] = useState<Stroke[]>(start);
+/**
+ * The drawer's page. Lines are smoothed, points are cleaned up before sending,
+ * and the phone checks the same limits as the host, so what the drawer sees is
+ * what everyone sees. Points go to the host every SEND_EVERY ms.
+ */
+function DrawerPad({
+  turn,
+  hostItems,
+  hostStale,
+  send,
+  header,
+  guesses,
+}: {
+  turn: number;
+  hostItems: Item[];
+  hostStale: boolean;
+  send: (t: string, p?: unknown) => void;
+  header: React.ReactNode;
+  guesses: React.ReactNode;
+}) {
+  const [items, setItemsState] = useState<Item[]>(hostItems);
+  const [redoN, setRedoN] = useState(0);
+  const [tool, setTool] = useState<Tool>("pen");
   const [color, setColor] = useState(0);
   const [width, setWidth] = useState(1);
-  const svgRef = useRef<SVGSVGElement>(null);
-  const drawing = useRef(false);
-  const buffer = useRef<number[]>([]);
-  const current = useRef<{ index: number } | null>(null);
-  const strokesRef = useRef<Stroke[]>(start);
-  const update = (next: Stroke[]) => {
-    strokesRef.current = next;
-    setStrokes(next);
+  const [popup, setPopup] = useState<Popup>(null);
+  const [full, setFull] = useState(false);
+  const [touched, setTouched] = useState(false);
+  const itemsRef = useRef<Item[]>(hostItems);
+  const redo = useRef<Item[]>([]);
+  const live = useRef<LiveInk>({ s: null, v: 0 });
+  const raw = useRef<number[]>([]);
+  const cur = useRef<{ index: number; started: boolean; c: number; w: number; e: boolean } | null>(null);
+  const pointer = useRef<number | null>(null);
+  const lastSend = useRef(0);
+  const hostRef = useRef({ items: hostItems, stale: hostStale });
+  hostRef.current = { items: hostItems, stale: hostStale };
+  const sendRef = useRef(send);
+  sendRef.current = send;
+
+  const setItems = (next: Item[]) => {
+    itemsRef.current = next;
+    setItemsState(next);
+  };
+  const bump = (s: Stroke | null) => {
+    live.current = { s, v: live.current.v + 1 };
+  };
+  const out = (t: string, p?: unknown) => {
+    lastSend.current = Date.now();
+    sendRef.current(t, p);
   };
 
   // A fresh page each turn (or the host's copy, if this phone reloaded mid-drawing).
   useEffect(() => {
-    strokesRef.current = start;
-    setStrokes(start);
-    buffer.current = [];
-    current.current = null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on a new turn
+    setItems(hostRef.current.items);
+    redo.current = [];
+    setRedoN(0);
+    raw.current = [];
+    cur.current = null;
+    pointer.current = null;
+    setFull(false);
+    setPopup(null);
+    setTouched(false);
+    bump(null);
   }, [turn]);
 
-  const flushNow = (pts: number[]) => {
-    const cur = current.current;
-    if (!cur || !pts.length) return;
-    const last = strokesRef.current[cur.index];
-    send("stroke", { s: cur.index, c: last?.c ?? color, w: last?.w ?? width, p: pts });
+  const endStroke = () => {
+    cur.current = null;
+    pointer.current = null;
+    raw.current = [];
+    bump(null);
+  };
+
+  /** Sends the points waiting to go, cleaned up and split to fit the limits. */
+  const flush = () => {
+    const c = cur.current;
+    if (!c || !raw.current.length) return;
+    let list = itemsRef.current;
+    let pts: number[];
+    if (c.started) {
+      const last = list[c.index] as Stroke;
+      const bx = last.p[last.p.length - 2], by = last.p[last.p.length - 1];
+      pts = simplify([bx, by, ...raw.current]).slice(2);
+    } else {
+      c.index = list.length;
+      pts = simplify(raw.current);
+    }
+    raw.current = [];
+    while (pts.length >= 2) {
+      const left = pointsLeft(list) - (pointsLeft(list) % 2);
+      if (left < 2) {
+        setFull(true);
+        endStroke();
+        break;
+      }
+      if (!c.started) {
+        if (!canAddItem(list, "s")) {
+          setFull(true);
+          endStroke();
+          break;
+        }
+        const chunk = pts.splice(0, Math.min(MAX_BATCH, MAX_STROKE_POINTS, left));
+        out("stroke", { s: c.index, c: c.c, w: c.w, e: c.e, p: chunk });
+        list = [...list, { k: "s", c: c.c, w: c.w, e: c.e, p: chunk }];
+        c.started = true;
+        redo.current = [];
+        setRedoN(0);
+        continue;
+      }
+      const last = list[c.index] as Stroke;
+      const room = MAX_STROKE_POINTS - last.p.length;
+      if (room < 2) {
+        // A very long line carries on as a new stroke from the same spot.
+        c.index = list.length;
+        c.started = false;
+        pts.unshift(last.p[last.p.length - 2], last.p[last.p.length - 1]);
+        continue;
+      }
+      const chunk = pts.splice(0, Math.min(MAX_BATCH, room, left));
+      out("stroke", { s: c.index, c: c.c, w: c.w, e: c.e, p: chunk });
+      list = [...list.slice(0, -1), { ...last, p: [...last.p, ...chunk] }];
+    }
+    setItems(list);
   };
 
   useEffect(() => {
     const t = setInterval(() => {
-      if (buffer.current.length) flushNow(buffer.current.splice(0, 400));
-    }, 250);
+      flush();
+      // Safety net: if the host's copy differs once things are quiet, follow the host.
+      const h = hostRef.current;
+      if (!cur.current && !h.stale && Date.now() - lastSend.current > 1500) {
+        const mine = itemsRef.current;
+        if (h.items.length !== mine.length || pointCount(h.items) !== pointCount(mine) || fillCount(h.items) !== fillCount(mine)) {
+          setItems(h.items);
+          redo.current = [];
+          setRedoN(0);
+        }
+      }
+    }, SEND_EVERY);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reads refs only
-  }, [send]);
+  }, []);
 
-  const point = (e: ReactPointerEvent<SVGSVGElement>) => {
-    const r = svgRef.current!.getBoundingClientRect();
-    const x = Math.round(((e.clientX - r.left) / r.width) * 1000);
-    const y = Math.round(((e.clientY - r.top) / r.height) * 1000);
-    return [Math.min(1000, Math.max(0, x)), Math.min(1000, Math.max(0, y))];
+  const toUnits = (e: { clientX: number; clientY: number }, el: Element) => {
+    const r = el.getBoundingClientRect();
+    return [clampCoord(((e.clientX - r.left) / r.width) * 1000), clampCoord(((e.clientY - r.top) / r.height) * 1000)];
   };
 
-  const down = (e: ReactPointerEvent<SVGSVGElement>) => {
+  const down = (e: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (e.button > 0 || pointer.current !== null) return;
     e.preventDefault();
-    svgRef.current?.setPointerCapture(e.pointerId);
-    drawing.current = true;
-    if (buffer.current.length) flushNow(buffer.current.splice(0));
-    const [x, y] = point(e);
-    const prev = strokesRef.current;
-    current.current = { index: prev.length };
-    update([...prev, { c: color, w: width, p: [x, y] }]);
-    buffer.current = [x, y];
-  };
-  const move = (e: ReactPointerEvent<SVGSVGElement>) => {
-    if (!drawing.current) return;
-    const [x, y] = point(e);
-    const prev = strokesRef.current;
-    if (!prev.length) return;
-    const last = prev[prev.length - 1];
-    const lx = last.p[last.p.length - 2];
-    const ly = last.p[last.p.length - 1];
-    if (Math.abs(lx - x) + Math.abs(ly - y) < 8) return; // fewer points, same look
-    buffer.current.push(x, y);
-    update([...prev.slice(0, -1), { ...last, p: [...last.p, x, y] }]);
-  };
-  const up = () => {
-    drawing.current = false;
+    setPopup(null);
+    setTouched(true);
+    const [x, y] = toUnits(e, e.currentTarget);
+    const list = itemsRef.current;
+    if (tool === "fill") {
+      if (!canAddItem(list, "f")) {
+        setFull(true);
+        return;
+      }
+      setItems([...list, { k: "f", c: color, x, y }]);
+      redo.current = [];
+      setRedoN(0);
+      out("fill", { c: color, x, y });
+      return;
+    }
+    if (!canAddItem(list, "s")) {
+      setFull(true);
+      return;
+    }
+    e.currentTarget.setPointerCapture(e.pointerId);
+    pointer.current = e.pointerId;
+    const c = { index: list.length, started: false, c: color, w: width, e: tool === "eraser" };
+    cur.current = c;
+    raw.current = [x, y];
+    bump({ k: "s", c: c.c, w: c.w, e: c.e, p: [x, y] });
   };
 
-  const tools = (
-    <div className="mt-3 space-y-2">
-      <div className="no-scrollbar -mx-1 flex items-end gap-0.5 overflow-x-auto px-1 pt-2" role="group" aria-label="Crayons">
+  const move = (e: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (pointer.current !== e.pointerId || !cur.current || !live.current.s) return;
+    const el = e.currentTarget;
+    const evs = typeof e.nativeEvent.getCoalescedEvents === "function" ? e.nativeEvent.getCoalescedEvents() : [];
+    const list = evs.length ? evs : [e.nativeEvent];
+    const p = live.current.s.p.slice();
+    let added = false;
+    for (const ev of list) {
+      const [x, y] = toUnits(ev, el);
+      const lx = p[p.length - 2], ly = p[p.length - 1];
+      if (Math.abs(lx - x) + Math.abs(ly - y) < 2) continue;
+      p.push(x, y);
+      raw.current.push(x, y);
+      added = true;
+    }
+    if (added) bump({ ...live.current.s, p });
+  };
+
+  const up = (e: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (pointer.current !== e.pointerId) return;
+    flush();
+    endStroke();
+  };
+
+  const undo = () => {
+    flush();
+    endStroke();
+    const list = itemsRef.current;
+    if (!list.length) return;
+    redo.current = [...redo.current, list[list.length - 1]];
+    setRedoN(redo.current.length);
+    setItems(list.slice(0, -1));
+    setFull(false);
+    out("undo");
+  };
+  const redoIt = () => {
+    flush();
+    endStroke();
+    const it = redo.current[redo.current.length - 1];
+    const list = itemsRef.current;
+    if (!it || !canAddItem(list, it.k) || (it.k === "s" && it.p.length > pointsLeft(list))) return;
+    redo.current = redo.current.slice(0, -1);
+    setRedoN(redo.current.length);
+    setItems([...list, it]);
+    out("redo");
+  };
+  const clear = () => {
+    flush();
+    endStroke();
+    setItems([]);
+    redo.current = [];
+    setRedoN(0);
+    setFull(false);
+    setPopup(null);
+    out("clear");
+  };
+
+  // Close a pop-up on Escape.
+  useEffect(() => {
+    if (!popup) return;
+    const k = (e: KeyboardEvent) => e.key === "Escape" && setPopup(null);
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [popup]);
+
+  const fit = useFitSquare();
+  const pageFull = full || !canAddItem(items, "s");
+  const ink = COLORS[color];
+
+  const popupBody =
+    popup === "color" ? (
+      <div role="group" aria-label="Colours" className="grid grid-cols-6 justify-items-center gap-2">
         {COLORS.map((c, i) => (
-          <Crayon key={c} color={c} name={COLOR_NAMES[i]} on={color === i} onPick={() => setColor(i)} />
+          <button
+            key={c}
+            type="button"
+            aria-label={COLOR_NAMES[i]}
+            aria-pressed={color === i}
+            onClick={() => {
+              setColor(i);
+              if (tool === "eraser") setTool("pen");
+              setPopup(null);
+            }}
+            className={`press flex h-11 w-11 items-center justify-center rounded-full ${color === i ? "ring-[3px] ring-ink ring-offset-2 ring-offset-paper" : ""}`}
+          >
+            <span className="block h-9 w-9 rounded-full border-[1.5px] border-ink" style={{ background: c }} />
+          </button>
+        ))}
+        <div className="col-span-6 -mb-1 text-p-note font-semibold text-muted">{COLOR_NAMES[color]}</div>
+      </div>
+    ) : popup === "size" ? (
+      <div role="group" aria-label="Line thickness" className="grid grid-cols-4 gap-2">
+        {WIDTHS.map((w, i) => (
+          <button
+            key={w}
+            type="button"
+            aria-label={`${WIDTH_NAMES[i]} line`}
+            aria-pressed={width === i}
+            onClick={() => {
+              setWidth(i);
+              setPopup(null);
+            }}
+            className={`press flex h-14 flex-col items-center justify-center gap-1 rounded-cut border-[1.5px] ${width === i ? "border-ink bg-turmeric" : "border-ink/25 bg-paper"}`}
+          >
+            <SizeDot w={i} color={tool === "eraser" ? "#ffffff" : ink} max={22} />
+            <span className="text-p-note font-semibold">{WIDTH_NAMES[i]}</span>
+          </button>
         ))}
       </div>
-      <div className="flex items-center gap-2">
-        <div role="group" aria-label="Line thickness" className="flex gap-1.5">
-          {WIDTHS.map((w, i) => (
-            <button
-              key={w}
-              type="button"
-              aria-label={["Patli", "Medium", "Moti"][i] + " line"}
-              aria-pressed={width === i}
-              onClick={() => setWidth(i)}
-              className={`press flex h-11 w-11 items-center justify-center rounded-cut border-[1.5px] ${width === i ? "border-ink bg-turmeric" : "border-ink/25 bg-paper"}`}
-            >
-              <span className="rounded-full" style={{ width: w / 2 + 3, height: w / 2 + 3, background: COLORS[color] }} />
-            </button>
-          ))}
+    ) : popup === "clear" ? (
+      <div className="space-y-2">
+        <p className="font-display text-p-lead font-extrabold">Pakka saaf karein?</p>
+        <p className="-mt-1 text-p-body text-muted">Poora page mit jayega. Undo se wapas nahi aayega.</p>
+        <div className="grid grid-cols-2 gap-2">
+          <PaperButton tone="paper" onClick={() => setPopup(null)}>
+            Rehne do
+          </PaperButton>
+          <PaperButton tone="vermilion" onClick={clear}>
+            <Trash2 className="h-4 w-4" strokeWidth={2.4} /> Saaf karo
+          </PaperButton>
         </div>
-        <div className="flex-1" />
-        <button
-          type="button"
-          onClick={() => {
-            buffer.current = [];
-            current.current = null;
-            update(strokesRef.current.slice(0, -1));
-            send("undo");
-          }}
-          disabled={!strokes.length}
-          className="press flex h-11 items-center gap-1.5 rounded-cut border-[1.5px] border-ink/25 px-3 text-p-body font-bold disabled:opacity-40"
-        >
-          <Undo2 className="h-4 w-4" strokeWidth={2.4} /> Undo
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            buffer.current = [];
-            current.current = null;
-            update([]);
-            send("clear");
-          }}
-          disabled={!strokes.length}
-          aria-label="Clear the page"
-          className="press flex h-11 w-11 items-center justify-center rounded-cut border-[1.5px] border-ink/25 text-vermilion disabled:opacity-40"
-        >
-          <Eraser className="h-5 w-5" strokeWidth={2.2} />
-        </button>
       </div>
-    </div>
-  );
+    ) : null;
 
   return (
-    <SketchPad pageKey={`t${turn}`} footer={tools}>
-      <svg
-        ref={svgRef}
-        data-pad="draw"
-        viewBox="0 0 1000 1000"
-        role="img"
-        aria-label="Your drawing pad. Draw with your finger."
-        className="no-callout block h-full w-full cursor-crosshair"
-        style={{ touchAction: "none" }}
-        onPointerDown={down}
-        onPointerMove={move}
-        onPointerUp={up}
-        onPointerCancel={up}
-        onPointerLeave={up}
-      >
-        <StrokesSvg strokes={strokes} />
-      </svg>
-      {!strokes.length && <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-p-lead font-semibold text-ink/30">Yahan banao…</span>}
-    </SketchPad>
+    <section aria-label="Your drawing" className="space-y-2">
+      {header}
+      {guesses}
+      <div ref={fit.ref} className="cut relative mx-auto rounded-soft bg-paper px-2 pb-2 pt-4" style={{ width: fit.size ? fit.size + 16 : undefined, maxWidth: "100%" }}>
+        <Spiral />
+        <div className="relative overflow-hidden rounded-cut border-[1.5px] border-ink/25 bg-white">
+          <div aria-hidden className="pointer-events-none absolute inset-x-0 top-1.5 z-10 border-t-[1.5px] border-dashed border-ink/15" />
+          <PadCanvas
+            items={items}
+            live={live}
+            dataPad="draw"
+            label="Your drawing pad. Draw with your finger."
+            className={tool === "fill" ? "cursor-cell" : "cursor-crosshair"}
+            onPointerDown={down}
+            onPointerMove={move}
+            onPointerUp={up}
+          >
+            {!items.length && !touched && (
+              <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-p-lead font-semibold text-ink/30">Yahan banao…</span>
+            )}
+            {pageFull && (
+              <div role="status" className="pointer-events-none absolute inset-x-2 top-3 rounded-cut border-[1.5px] border-vermilion bg-paper/95 px-2 py-1 text-center text-p-note font-bold">
+                Page bhar gaya! Undo karo ya page saaf karo.
+              </div>
+            )}
+          </PadCanvas>
+        </div>
+      </div>
+
+      <div ref={fit.toolsRef} className="relative">
+        {popup && (
+          <>
+            <button type="button" aria-label="Close" tabIndex={-1} className="fixed inset-0 z-30 cursor-default" onClick={() => setPopup(null)} />
+            <div
+              role="dialog"
+              aria-label={popup === "color" ? "Choose a colour" : popup === "size" ? "Choose line thickness" : "Clear the page?"}
+              className="cut absolute inset-x-0 bottom-full z-40 mb-2 rounded-cut bg-paper p-3"
+            >
+              {popupBody}
+            </div>
+          </>
+        )}
+        <div role="toolbar" aria-label="Drawing tools" className="grid grid-cols-7 gap-0.5">
+          <ToolButton
+            label={`Pencil, ${WIDTH_NAMES[width]} line${tool === "pen" ? ". Tap again for line size" : ""}`}
+            on={tool === "pen"}
+            onClick={() => {
+              if (tool === "pen") setPopup(popup === "size" ? null : "size");
+              else {
+                setTool("pen");
+                setPopup(null);
+              }
+            }}
+          >
+            <Pencil className="h-5 w-5" strokeWidth={2.3} />
+            <span className="absolute bottom-1 right-1 flex h-[18px] w-[18px] items-center justify-center">
+              <SizeDot w={width} color={ink} max={14} />
+            </span>
+          </ToolButton>
+          <ToolButton label={`Colour: ${COLOR_NAMES[color]}`} expanded={popup === "color"} onClick={() => setPopup(popup === "color" ? null : "color")}>
+            <span className="block h-7 w-7 rounded-full border-[1.5px] border-ink" style={{ background: ink }} />
+          </ToolButton>
+          <ToolButton
+            label={`Eraser${tool === "eraser" ? ". Tap again for size" : ""}`}
+            on={tool === "eraser"}
+            onClick={() => {
+              if (tool === "eraser") setPopup(popup === "size" ? null : "size");
+              else {
+                setTool("eraser");
+                setPopup(null);
+              }
+            }}
+          >
+            <Eraser className="h-5 w-5" strokeWidth={2.3} />
+          </ToolButton>
+          <ToolButton
+            label="Fill with colour"
+            on={tool === "fill"}
+            onClick={() => {
+              setTool("fill");
+              setPopup(null);
+            }}
+          >
+            <PaintBucket className="h-5 w-5" strokeWidth={2.3} />
+            <span aria-hidden className="absolute bottom-1.5 right-1.5 h-2.5 w-2.5 rounded-full border border-ink/50" style={{ background: ink }} />
+          </ToolButton>
+          <ToolButton label="Undo" disabled={!items.length} onClick={undo}>
+            <Undo2 className="h-5 w-5" strokeWidth={2.4} />
+          </ToolButton>
+          <ToolButton label="Redo" disabled={!redoN} onClick={redoIt}>
+            <Redo2 className="h-5 w-5" strokeWidth={2.4} />
+          </ToolButton>
+          <ToolButton label="Clear the page" danger disabled={!items.length} expanded={popup === "clear"} onClick={() => setPopup(popup === "clear" ? null : "clear")}>
+            <Trash2 className="h-5 w-5" strokeWidth={2.3} />
+          </ToolButton>
+        </div>
+      </div>
+    </section>
   );
+}
+
+/**
+ * Sizes the drawer's page so the page and the toolbar fit on one screen
+ * (from 360×640 up), without scrolling while drawing.
+ */
+function useFitSquare() {
+  const ref = useRef<HTMLDivElement>(null);
+  const toolsRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState<number | null>(null);
+  useEffect(() => {
+    const measure = () => {
+      const el = ref.current;
+      const parent = el?.parentElement;
+      if (!el || !parent) return;
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      const tools = toolsRef.current?.getBoundingClientRect().height ?? 48;
+      // Frame padding (24) + gap above the toolbar (8) + toolbar + room at the bottom (12).
+      const avail = window.innerHeight - top - 24 - 8 - tools - 12;
+      const maxW = parent.getBoundingClientRect().width - 16;
+      setSize(Math.round(Math.max(200, Math.min(maxW, avail))));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (ref.current?.parentElement) ro.observe(ref.current.parentElement);
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+    };
+  }, []);
+  return { ref, toolsRef, size };
 }
 
 /* ------------------------------------------------------------------ */
 /* Word, guesses                                                        */
 /* ------------------------------------------------------------------ */
 
-/** The hidden word as letter tiles; the first letter appears halfway through. */
+/** The hidden word as letter boxes; the first letter appears halfway through. */
 function MaskTiles({ mask, first }: { mask: string; first: string }) {
-  const chars = [...mask];
-  const letters = chars.filter((c) => c === "_").length;
+  const letters = [...mask].filter((c) => c === "_").length;
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5" aria-label={`The word has ${letters} letters${first ? `, starting with ${first}` : ""}`}>
       {mask.split(" ").map((word, wi) => (
         <div key={wi} className="flex gap-1">
           {[...word].map((c, i) => {
             const shown = wi === 0 && i === 0 && first ? first : c === "_" ? "" : c;
+            const box = c === "_";
             return (
               <span
                 key={i}
                 aria-hidden
-                className={`font-display flex h-9 w-7 items-end justify-center border-b-[2.5px] pb-0.5 text-p-title font-extrabold uppercase ${shown ? "border-ink" : "border-ink/40"}`}
+                className={`font-display flex h-9 items-center justify-center text-p-title font-extrabold uppercase leading-none ${
+                  box ? `w-7 rounded-[6px] border-2 border-ink ${shown ? "bg-turmeric" : "bg-paper"} shadow-[1.5px_1.5px_0_0_var(--ink)]` : "w-3"
+                }`}
               >
                 {shown}
               </span>
@@ -348,7 +709,30 @@ function MaskTiles({ mask, first }: { mask: string; first: string }) {
           })}
         </div>
       ))}
-      <span className="text-p-note font-semibold text-muted">({letters})</span>
+      <span className="rounded-full bg-ink px-2 py-0.5 text-p-note font-bold text-paper">{letters} akshar</span>
+    </div>
+  );
+}
+
+/** The newest guesses on one line, so the drawer sees them without scrolling. */
+function GuessTicker({ feed, players, correct }: { feed: FeedEntry[]; players: Player[]; correct: number }) {
+  const items = feed.slice(-3).reverse();
+  return (
+    <div aria-live="polite" className="flex h-8 min-w-0 items-center gap-2 overflow-hidden rounded-cut border-[1.5px] border-ink/20 bg-card px-2 text-p-note font-semibold">
+      <span className="shrink-0 rounded-full bg-leaf/15 px-1.5 font-bold text-leaf">{correct} ✓</span>
+      {items.length ? (
+        items.map((f, i) => {
+          const p = players.find((x) => x.id === f.playerId);
+          return (
+            <span key={feed.length - i} className={`flex min-w-0 shrink items-center gap-1 truncate ${i ? "opacity-60" : ""}`}>
+              <b className="truncate">{p?.name ?? "?"}</b>
+              <span className="truncate">{f.text === null ? "bujh gaye!" : f.text}</span>
+            </span>
+          );
+        })
+      ) : (
+        <span className="truncate text-muted">Guesses yahan dikhenge…</span>
+      )}
     </div>
   );
 }
@@ -385,6 +769,11 @@ function GuessStrip({ tries, onSubmit }: { tries: number; onSubmit: (t: string) 
           autoComplete="off"
           autoCorrect="off"
           enterKeyHint="send"
+          onFocus={(e) => {
+            const el = e.currentTarget;
+            // Keep the box above the phone keyboard once it slides up.
+            setTimeout(() => el.scrollIntoView({ block: "center", behavior: "smooth" }), 300);
+          }}
           className="font-display h-14 w-full bg-transparent px-3 text-p-lead font-bold outline-none placeholder:font-semibold placeholder:text-ink/30"
         />
       </motion.div>
@@ -605,7 +994,8 @@ export function Phone({ view, priv, me, players, send, now, isHost, hostAct }: P
   const live = view.phase === "choosing" || view.phase === "drawing";
   const secsLeft = live ? Math.ceil(Math.max(0, view.deadline - now) / 1000) : -1;
   const hint = view.phase === "drawing" && now >= view.hintAt ? view.firstLetter : "";
-  const { strokes: hostStrokes } = usePadStrokes(view.pad);
+  const { items: hostItems, stale: hostStale } = usePadStrokes(view.sketch);
+  const drawingNow = view.phase === "drawing" && iDraw;
   const awayLeft = view.drawerAwaySince ? Math.max(0, Math.ceil((view.drawerAwaySince + DRAWER_AWAY_SKIP - now) / 1000)) : null;
 
   useOnChange(view.turn, () => {
@@ -636,6 +1026,10 @@ export function Phone({ view, priv, me, players, send, now, isHost, hostAct }: P
     }
   });
   useEffect(() => setConfirmSkip(false), [view.turn, view.phase]);
+  // The drawer's page and tools fit one screen; start at the top so nothing is hidden.
+  useEffect(() => {
+    if (drawingNow) window.scrollTo({ top: 0 });
+  }, [drawingNow]);
   useEffect(() => {
     if (!confirmSkip) return;
     const t = setTimeout(() => setConfirmSkip(false), 3500);
@@ -677,8 +1071,12 @@ export function Phone({ view, priv, me, players, send, now, isHost, hostAct }: P
           </motion.div>
         ) : (
           <motion.div key="play" {...screenIn} className="space-y-4">
-            <TopBar view={view} players={players} me={me} onScores={() => setShowScores(true)} />
-            <div className="min-h-7">{timer}</div>
+            {!drawingNow && (
+              <>
+                <TopBar view={view} players={players} me={me} onScores={() => setShowScores(true)} />
+                <div className="min-h-7">{timer}</div>
+              </>
+            )}
 
             {awayLeft !== null && (
               <div role="status" className="flex items-center gap-2 rounded-cut border-[1.5px] border-vermilion bg-card px-3 py-2 text-p-body font-semibold">
@@ -713,20 +1111,31 @@ export function Phone({ view, priv, me, players, send, now, isHost, hostAct }: P
               </section>
             )}
 
-            {/* ---------- drawer: draw ---------- */}
-            {view.phase === "drawing" && iDraw && (
-              <section aria-label="Your drawing">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="cut -rotate-1 rounded-cut bg-turmeric px-3 py-1.5">
-                    <span className="text-p-note font-bold uppercase tracking-[0.14em]">Banao</span>
-                    <div className="font-display text-p-title font-extrabold leading-tight">{priv?.word ?? "…"}</div>
+            {/* ---------- drawer: draw (fits one screen: word, time, guesses, page, tools) ---------- */}
+            {drawingNow && (
+              <DrawerPad
+                turn={view.turn}
+                hostItems={hostItems}
+                hostStale={hostStale}
+                send={send}
+                header={
+                  <div className="flex items-center gap-2">
+                    <div className="cut min-w-0 flex-1 -rotate-1 rounded-cut bg-turmeric px-2.5 py-1">
+                      <span className="text-[11px] font-bold uppercase tracking-[0.14em]">Banao</span>
+                      <div className="font-display truncate text-p-title font-extrabold leading-tight">{priv?.word ?? "…"}</div>
+                    </div>
+                    <DrawClock deadline={view.deadline} total={view.seconds * 1000} now={now} />
+                    <button
+                      onClick={() => setShowScores(true)}
+                      aria-label={`Your score: ${view.scores[me.id] ?? 0}. Show all scores`}
+                      className="press flex h-11 shrink-0 items-center gap-1 rounded-cut border-[1.5px] border-ink/25 px-2 text-p-body font-bold"
+                    >
+                      <Trophy className="h-4 w-4 text-turmeric-ink" strokeWidth={2.4} /> <ScoreTick score={view.scores[me.id] ?? 0} />
+                    </button>
                   </div>
-                  <div className="text-right text-p-body font-semibold text-muted">
-                    <span className="font-display text-p-title font-extrabold text-ink">{view.correct.length}</span> bujh gaye
-                  </div>
-                </div>
-                <DrawerPad turn={view.turn} start={hostStrokes} send={send} />
-              </section>
+                }
+                guesses={<GuessTicker feed={view.feed} players={players} correct={view.correct.length} />}
+              />
             )}
 
             {/* ---------- everyone else, and everyone at reveal: one pad, so the page tears off between turns ---------- */}
@@ -762,7 +1171,7 @@ export function Phone({ view, priv, me, players, send, now, isHost, hostAct }: P
               </section>
             )}
 
-            {view.phase === "drawing" && (
+            {view.phase === "drawing" && !iDraw && (
               <section aria-label="Guesses" className="space-y-2">
                 <h3 className="text-p-note font-bold uppercase tracking-[0.14em] text-muted">
                   Guesses · {view.correct.length} bujh gaye

@@ -1,6 +1,6 @@
 /**
  * Test-mode bots for Draw & Guess. Uses the same actions a real phone sends
- * ("choose", "stroke", "guess"), so the game logic is what gets exercised.
+ * ("choose", "stroke", "fill", "guess"), so the game logic is what gets exercised.
  * Called about once a second by the host while test mode is on.
  */
 import { COLORS } from "./shared";
@@ -10,7 +10,7 @@ interface Raw {
   drawers?: string[];
   turn?: number;
   word?: string | null;
-  strokes?: { p: number[] }[];
+  items?: { k: string }[];
   correct?: string[];
   startedAt?: number;
   deadline?: number;
@@ -48,9 +48,14 @@ export function botMoves(raw: unknown, _view: unknown, bots: string[]): BotMove[
   }
 
   if (s.phase === "drawing") {
-    const strokes = s.strokes ?? [];
-    if (botDraws && strokes.length < 10 && Math.random() < 0.6) {
-      out.push({ playerId: drawer!, type: "stroke", payload: { s: strokes.length, c: Math.floor(Math.random() * COLORS.length), w: 1, p: squiggle() } });
+    const items = s.items ?? [];
+    if (botDraws && items.length < 10 && Math.random() < 0.6) {
+      // Mostly lines, now and then a paint-bucket fill, so test mode exercises both.
+      if (items.length > 2 && Math.random() < 0.15) {
+        out.push({ playerId: drawer!, type: "fill", payload: { c: Math.floor(Math.random() * COLORS.length), x: Math.round(100 + Math.random() * 800), y: Math.round(100 + Math.random() * 800) } });
+      } else {
+        out.push({ playerId: drawer!, type: "stroke", payload: { s: items.length, c: Math.floor(Math.random() * COLORS.length), w: 1, p: squiggle() } });
+      }
     }
     const word = s.word?.split("|")[0];
     const elapsed = (Date.now() - (s.startedAt ?? Date.now())) / Math.max(1, (s.deadline ?? 0) - (s.startedAt ?? 0));

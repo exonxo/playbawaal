@@ -4,28 +4,22 @@ import { LevelPicker, NumberPicker } from "@/components/ui";
 import { DRAW_WORDS } from "@/content/draw-guess";
 import { HOST_ID, type ControllerProps, type GameModule, type Level } from "@/lib/types";
 import { answerMatches, shuffle } from "@/lib/util";
+import { itemsOf, reduceDrawing } from "./host";
 import { Phone } from "./PaperPhone";
 import { TvScreen } from "./Tv";
 import {
-  COLORS,
   DRAWER_AWAY_SKIP,
   KEYFRAME_EVERY,
   KEYFRAME_FOR,
-  MAX_POINTS,
-  MAX_STROKE_POINTS,
-  TAIL_OPS,
-  WIDTHS,
-  applyOp,
+  PAD_VERSION,
   encodeDrawing,
-  encodePoints,
   type FeedEntry,
+  type Item,
   type LoggedOp,
-  type Op,
   type Options,
   type Phase,
   type Priv,
   type Pub,
-  type Stroke,
 } from "./shared";
 
 export interface State {
@@ -42,7 +36,9 @@ export interface State {
   deadline: number;
   revealUntil: number | null;
   /** The drawing so far (host only; phones rebuild it from ops). */
-  strokes: Stroke[];
+  items: Item[];
+  /** Undone items, newest last, for redo. Cleared by any new drawing. */
+  undone: Item[];
   /** The last few drawing ops, with their index in the turn's log. */
   ops: LoggedOp[];
   /** Ops logged so far this turn. */
@@ -87,7 +83,8 @@ function startTurn(s: State, turn: number, now: number): State {
     startedAt: now,
     deadline: now + CHOOSE_FOR,
     revealUntil: null,
-    strokes: [],
+    items: [],
+    undone: [],
     ops: [],
     opN: 0,
     kfOn: false,
@@ -106,23 +103,6 @@ function choose(s: State, i: number, now: number): State {
 
 function reveal(s: State, now: number): State {
   return { ...s, phase: "reveal", revealUntil: now + REVEAL_FOR, kfOn: false };
-}
-
-function logOp(s: State, op: Op): State {
-  return { ...s, strokes: applyOp(s.strokes, op), ops: [...s.ops, { ...op, i: s.opN } as LoggedOp].slice(-TAIL_OPS), opN: s.opN + 1 };
-}
-
-function isPointList(v: unknown): v is number[] {
-  return Array.isArray(v) && v.length % 2 === 0 && v.length <= 400 && v.every((n) => Number.isInteger(n) && n >= 0 && n <= 1000);
-}
-
-function index(v: unknown, list: unknown[], fallback: number): number {
-  if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < list.length) return v;
-  if (typeof v === "string") {
-    const i = list.indexOf(v);
-    if (i >= 0) return i;
-  }
-  return fallback;
 }
 
 /** Older code path (a phone without the phone-first view): same screen, no host controls. */
@@ -161,7 +141,8 @@ const drawGuess: GameModule<State, Pub, Priv, Options> = {
       startedAt: now,
       deadline: now,
       revealUntil: null,
-      strokes: [],
+      items: [],
+      undone: [],
       ops: [],
       opN: 0,
       kfOn: false,
@@ -186,28 +167,13 @@ const drawGuess: GameModule<State, Pub, Priv, Options> = {
       case "choose":
         if (!isDrawer || s.phase !== "choosing") return s;
         return choose(s, Number(a.payload) || 0, now);
-      case "stroke": {
-        if (!isDrawer || s.phase !== "drawing") return s;
-        const m = a.payload as { s?: unknown; c?: unknown; w?: unknown; p?: unknown };
-        if (!m || typeof m.s !== "number" || !isPointList(m.p) || m.p.length === 0) return s;
-        const total = s.strokes.reduce((n, st) => n + st.p.length, 0);
-        if (total + m.p.length > MAX_POINTS) return s;
-        if (m.s === s.strokes.length) {
-          return logOp(s, { k: "a", s: m.s, c: index(m.c, COLORS, 0), w: index(m.w, WIDTHS, 1), p: encodePoints(m.p) });
-        }
-        if (m.s === s.strokes.length - 1) {
-          const last = s.strokes[s.strokes.length - 1];
-          if (last.p.length + m.p.length > MAX_STROKE_POINTS) return s;
-          return logOp(s, { k: "a", s: m.s, c: last.c, w: last.w, p: encodePoints(m.p) });
-        }
-        return s;
-      }
+      case "stroke":
+      case "fill":
       case "undo":
-        if (!isDrawer || s.phase !== "drawing" || !s.strokes.length) return s;
-        return logOp(s, { k: "u" });
+      case "redo":
       case "clear":
-        if (!isDrawer || s.phase !== "drawing" || !s.strokes.length) return s;
-        return logOp(s, { k: "x" });
+        if (!isDrawer || s.phase !== "drawing") return s;
+        return reduceDrawing(s, a.type, a.payload);
       case "reveal":
         if (!isHost || s.phase !== "drawing") return s;
         return reveal(s, now);
@@ -264,7 +230,7 @@ const drawGuess: GameModule<State, Pub, Priv, Options> = {
   },
   publicView(s) {
     const word = s.word ? display(s.word) : "";
-    const full = s.phase === "reveal" || s.phase === "over" || s.kfOn ? encodeDrawing(s.strokes) : null;
+    const full = s.phase === "reveal" || s.phase === "over" || s.kfOn ? encodeDrawing(itemsOf(s)) : null;
     return {
       drawerId: drawerOf(s),
       turn: s.turn,
@@ -276,7 +242,8 @@ const drawGuess: GameModule<State, Pub, Priv, Options> = {
       mask: maskOf(word),
       // Revealed by the phones only after hintAt.
       firstLetter: s.phase === "drawing" ? word.charAt(0) : "",
-      pad: { turn: s.turn, n: s.opN, tail: s.ops, full },
+      pad: { turn: s.turn, n: 0, tail: [], full: null },
+      sketch: { v: PAD_VERSION, turn: s.turn, n: s.opN, tail: s.ops, full },
       correct: s.correct,
       feed: s.feed,
       scores: s.scores,
